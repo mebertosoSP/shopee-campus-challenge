@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login | Shopee After Class Club</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body data-page="login">
+    <header class="site-header">
+      <nav class="container nav">
+        <a class="brand" href="index.html">Shopee After Class Club</a>
+        <div class="nav-links">
+          <a href="index.html">Home</a>
+          <a href="acc.html">ACC</a>
+          <a href="leaderboard.html">Leaderboard</a>
+          <a href="admin.html" id="adminNavLink" class="admin-only">Admin</a>
+          <a data-auth-link class="button ghost" href="login.html">Login</a>
+        </div>
+      </nav>
+    </header>
+
+    <main class="auth-shell">
+      <div class="auth-card">
+        <p class="eyebrow">Organization sign in</p>
+        <h1>Access your referral tracker</h1>
+        <p class="muted">Please use your organization email address to sign in.</p>
+        <form id="loginForm" class="auth-form">
+          <label>
+            Organization email
+            <input type="email" id="loginEmail" required placeholder="org@university.edu" />
+          </label>
+          <label>
+            Password
+            <input type="password" id="loginPassword" required placeholder="Enter password" />
+          </label>
+          <button class="button primary full" type="submit">Log in</button>
+        </form>
+        <p id="authMessage" class="form-message"></p>
+        <p class="helper-text">
+          New here? <a href="register.html">Join now</a>
+        </p>
+
+        <div class="inquiry-box">
+          <h3>Forgot your password?</h3>
+          <p class="muted">If you forgot your password, send your details below and the admin team will reach out to you.</p>
+          <form id="passwordHelpForm" class="auth-form compact">
+            <label>
+              Organization email
+              <input type="email" id="helpEmail" required placeholder="org@university.edu" />
+            </label>
+            <label>
+              Contact person name
+              <input type="text" id="helpContactPerson" required placeholder="Enter full name" />
+            </label>
+            <label>
+              Contact number
+              <input type="tel" id="helpContactNumber" required placeholder="e.g., 09171234567" />
+            </label>
+            <label>
+              Message
+              <textarea id="helpMessage" rows="3" placeholder="Share any details needed for password recovery"></textarea>
+            </label>
+            <button class="button secondary full" type="submit">Send password recovery request</button>
+          </form>
+          <p id="helpStatus" class="form-message"></p>
+        </div>
+      </div>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard | Shopee After Class Club</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body data-page="dashboard" data-requires-auth="true">
+    <header class="site-header">
+      <nav class="container nav">
+        <a class="brand" href="index.html">Shopee After Class Club</a>
+        <div class="nav-links">
+          <a href="index.html">Home</a>
+          <a href="acc.html">ACC</a>
+          <a href="leaderboard.html">Leaderboard</a>
+          <a href="admin.html" id="adminNavLink" class="admin-only">Admin</a>
+          <a data-auth-link class="button ghost" href="login.html">Login</a>
+        </div>
+      </nav>
+    </header>
+
+    <main class="container dashboard-shell">
+      <section class="page-title">
+        <p class="eyebrow">Referral tracker</p>
+        <h1>Welcome back, <span id="userName">Organizer</span></h1>
+        <p class="muted">You are tracking referrals for <span id="orgName">your organization</span>.</p>
+        <div id="adminDashboardOrgWrap" class="admin-dashboard-selector" style="display: none;">
+          <label>
+            View organization
+            <select id="adminDashboardOrgSelect"></select>
+          </label>
+        </div>
+      </section>
+
+      <section id="pendingApprovalScreen" class="card waiting-screen hidden">
+        <p class="eyebrow">Pending approval</p>
+        <h2>Your registration is under review</h2>
+        <p class="muted">Please wait for the admin to approve your organization before tracking referrals.</p>
+      </section>
+
+      <section class="stat-row" id="dashboardStatsRow">
+        <article class="card stat-card">
+          <h3>Referrals Overall</h3>
+          <p id="overallReferrals" class="stat-value">0</p>
+        </article>
+        <article class="card stat-card">
+          <h3>Current Reward Tier</h3>
+          <p id="tierValue" class="stat-value">Pending</p>
+        </article>
+        <article class="card stat-card">
+          <h3>Weekly Referrals</h3>
+          <p id="weeklyReferrals" class="stat-value">0</p>
+        </article>
+      </section>
+
+      <section class="dashboard-stack" id="dashboardContentStack">
+        <div class="dashboard-row">
+          <article class="card">
+            <div class="card-header">
+              <h2>Reward tiers</h2>
+              <a href="leaderboard.html" class="text-link">Campus leaderboard</a>
+            </div>
+            <div class="tier-mini-grid dashboard-tier-grid">
+              <article class="tier-mini-box grand"><h4>Grand Champion</h4><p>Top organization in the final leaderboard (accolade, not a quota tier).</p></article>
+              <article class="tier-mini-box diamond"><h4>Diamond</h4><p>200+ qualified referrals.</p></article>
+              <article class="tier-mini-box gold"><h4>Gold</h4><p>100+ qualified referrals.</p></article>
+              <article class="tier-mini-box base"><h4>Base Reward</h4><p>50+ qualified referrals.</p></article>
+              <article class="tier-mini-box nonqual"><h4>Non-Qualifier</h4><p>0-49 qualified referrals.</p></article>
+            </div>
+          </article>
+          <article class="card">
+            <div class="card-header">
+              <h2>Marketing kit</h2>
+            </div>
+            <div class="marketing-box">
+              <h3>Marketing kit</h3>
+              <p class="referral-code-highlight"><strong>Referral code:</strong> <span id="orgReferralCode">-</span></p>
+              <ol class="reminder-list compact">
+                <li>Organizations must give this referral code to prospective registrants.</li>
+                <li>Prospective registrants must go to Shopee and sign up for ACC.</li>
+                <li>In ACC registration, they must input your referral code.</li>
+              </ol>
+            </div>
+            <div class="claim-box">
+              <h3>Campaign marketing guide</h3>
+              <p>Use the official ACC campaign guide for approved creatives, messaging, and referral activation mechanics.</p>
+              <a class="button claim-link" href="https://drive.google.com/" target="_blank" rel="noreferrer">Open marketing kit drive</a>
+            </div>
+          </article>
+        </div>
+
+        <article class="card chunky">
+          <div class="card-header">
+            <h2>Weekly report</h2>
+          </div>
+          <div class="card" style="padding: 0; border: none; box-shadow: none; background: transparent;">
+            <div class="progress-block">
+              <div class="progress-label">
+                <span>Overall quota progress</span>
+                <span id="overallProgressLabel">0 referrals · Non-Qualifier</span>
+              </div>
+              <div class="progress-bar">
+                <span id="progressFill"></span>
+              </div>
+              <p id="progressTierNote" class="muted" style="margin: 8px 0 0;">0-49: Quota not reached.</p>
+            </div>
+            <div class="weekly-report">
+              <div class="metric-box metric-next">
+                <div class="metric-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="img"><path d="M7 12l3 3 7-7" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="4" y="4" width="16" height="16" rx="3" ry="3" fill="none" stroke="#000" stroke-width="2.5"/></svg>
+                </div>
+                <div>
+                  <p>Next reward tier</p>
+                  <strong id="nextTierValue">Pending</strong>
+                </div>
+              </div>
+              <div class="metric-box metric-payout">
+                <div class="metric-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="img"><path d="M5 7h14v10H5z" fill="#fff" stroke="#000" stroke-width="2.5"/><path d="M9 11h6" stroke="#000" stroke-width="2.5" stroke-linecap="round"/><path d="M8 15h8" stroke="#000" stroke-width="2.5" stroke-linecap="round"/></svg>
+                </div>
+                <div>
+                  <p>Estimated payout</p>
+                  <strong id="estimatedPayout">Standard campaign allocation</strong>
+                </div>
+              </div>
+              <div class="metric-box metric-status">
+                <div class="metric-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="img"><circle cx="12" cy="12" r="8" fill="#fff" stroke="#000" stroke-width="2.5"/><path d="M12 8v5" stroke="#000" stroke-width="2.5" stroke-linecap="round"/><circle cx="12" cy="16" r="1" fill="#000"/></svg>
+                </div>
+                <div>
+                  <p>Verification status</p>
+                  <strong id="verificationStatus">Pending admin review</strong>
+                </div>
+              </div>
+            </div>
+            <div class="inquiry-box">
+              <h3>Any questions or inquiry?</h3>
+              <form id="inquiryForm" class="auth-form compact">
+                <label>
+                  Message
+                  <textarea id="inquiryMessage" rows="3" required placeholder="Share your follow-up or concern"></textarea>
+                </label>
+                <button class="button primary full" type="submit">Send inquiry</button>
+              </form>
+              <div id="inquiryStatus" class="form-message"></div>
+              <div id="inquiryThread" class="inquiry-thread"></div>
+            </div>
+            <div class="inquiry-box">
+              <h3>Change password</h3>
+              <form id="changePasswordForm" class="auth-form compact">
+                <label>
+                  Current password
+                  <input type="password" id="currentPassword" required placeholder="Enter current password" />
+                </label>
+                <label>
+                  New password
+                  <input type="password" id="newPassword" required placeholder="Enter new password" />
+                </label>
+                <label>
+                  Confirm new password
+                  <input type="password" id="confirmNewPassword" required placeholder="Repeat new password" />
+                </label>
+                <button class="button primary full" type="submit">Update password</button>
+              </form>
+              <div id="changePasswordStatus" class="form-message"></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>Referral Profile</h2>
+          </div>
+          <div class="table-wrap">
+            <table class="leaderboard-table referral-table">
+              <thead>
+                <tr>
+                  <th>Select</th>
+                  <th>Created</th>
+                  <th>Referral</th>
+                  <th>Organization Name</th>
+                  <th>Organization Email</th>
+                  <th>Contact Person</th>
+                  <th>Position in the organization</th>
+                  <th>Contact Number</th>
+                  <th>Shopee Username</th>
+                  <th>ShopeePay Screenshot</th>
+                </tr>
+              </thead>
+              <tbody id="dashboardReferralProfileBody"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>

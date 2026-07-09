@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Register | Shopee After Class Club</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body data-page="register">
+    <header class="site-header">
+      <nav class="container nav">
+        <a class="brand" href="index.html">Shopee After Class Club</a>
+        <div class="nav-links">
+          <a href="index.html">Home</a>
+          <a href="acc.html">ACC</a>
+          <a href="leaderboard.html">Leaderboard</a>
+          <a href="admin.html" id="adminNavLink" class="admin-only">Admin</a>
+          <a data-auth-link class="button ghost" href="login.html">Login</a>
+        </div>
+      </nav>
+    </header>
+
+    <main class="auth-shell">
+      <div class="auth-card">
+        <p class="eyebrow">Join now</p>
+        <h1>Register your student organization</h1>
+        <ol class="reminder-list compact register-instruction-list">
+          <li>Organization contact persons must clearly indicate their intent to participate in the ACC referral program through email.</li>
+          <li>Only one contact person and one organization email are allowed per organization; non-compliance may invalidate referrals associated with excess entries.</li>
+          <li>The designated contact person must have a verified ShopeePay account and active Shopee username for verification. To confirm ShopeePay, open the ShopeePay section of the app, tap Me, and submit a screenshot of that screen.</li>
+        </ol>
+        <form id="registerForm" class="auth-form">
+          <label>
+            Student organization
+            <input type="text" id="registerName" required placeholder="Enter your organization name" />
+          </label>
+          <label>
+            Organization acronym
+            <input type="text" id="registerAcronym" required maxlength="6" pattern="^[A-Za-z0-9]{1,6}$" placeholder="Up to 6 letters/numbers only" />
+            <small class="helper-text">Do not include spaces or parentheses.</small>
+          </label>
+          <label>
+            Organization email
+            <input type="email" id="registerEmail" required placeholder="org@university.edu" />
+          </label>
+          <label>
+            Contact person
+            <input type="text" id="registerContactPerson" required placeholder="Enter full name" />
+          </label>
+          <label>
+            Position in the organization
+            <input type="text" id="registerContactPosition" required placeholder="e.g., President" />
+          </label>
+          <label>
+            Contact number
+            <input type="tel" id="registerContactNumber" required placeholder="e.g., 09171234567" />
+          </label>
+          <label>
+            Shopee username
+            <input type="text" id="registerShopeeUsername" required placeholder="Enter Shopee username" />
+          </label>
+          <label>
+            Screenshot of verified ShopeePay
+            <input type="file" id="registerShopeePayScreenshot" required accept="image/*" />
+            <small class="helper-text">Reminder: submit a screenshot only after your ShopeePay account is verified.</small>
+          </label>
+          <label>
+            University
+            <select id="registerUniversity" required>
+              <option value="" selected>Select university</option>
+              <option value="Ateneo de Manila University">Ateneo de Manila University</option>
+              <option value="University of the Philippines">University of the Philippines</option>
+              <option value="De La Salle University">De La Salle University</option>
+              <option value="University of Santo Tomas">University of Santo Tomas</option>
+              <option value="Mapúa University">Mapúa University</option>
+              <option value="Far Eastern University">Far Eastern University</option>
+              <option value="University of the East">University of the East</option>
+              <option value="Adamson University">Adamson University</option>
+              <option value="National University">National University</option>
+              <option value="Centro Escolar University">Centro Escolar University</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+          <label>
+            Password
+            <input type="password" id="registerPassword" required pattern="^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$" title="Use at least one uppercase letter, one lowercase letter, and one number." placeholder="Create a password" />
+            <small class="helper-text">Use at least 1 uppercase letter, 1 lowercase letter, and 1 number.</small>
+          </label>
+          <label>
+            Confirm password
+            <input type="password" id="registerConfirm" required placeholder="Repeat password" />
+          </label>
+          <button class="button primary full" type="submit">Register</button>
+        </form>
+        <p id="authMessage" class="form-message"></p>
+        <p class="helper-text">
+          Already joined? <a href="login.html">Log in</a>
+        </p>
+      </div>
+    </main>
+
+    <div id="registerSubmittedModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="registerSubmittedTitle">
+      <div class="modal-card compact-modal">
+        <h2 id="registerSubmittedTitle">Profile submitted for verification</h2>
+        <p class="muted">Your organization profile has been submitted. Please return at 12:00 PM tomorrow, then enter your password to log in.</p>
+        <div class="button-group-inline" style="margin-top: 12px;">
+          <button id="registerSubmittedGoLogin" type="button" class="button primary">Go to login</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>

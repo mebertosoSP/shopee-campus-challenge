@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin | Shopee After Class Club</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body data-page="admin" data-requires-auth="true">
+    <header class="site-header">
+      <nav class="container nav">
+        <a class="brand" href="index.html">Shopee After Class Club</a>
+        <div class="nav-links">
+          <a href="index.html">Home</a>
+          <a href="acc.html">ACC</a>
+          <a href="leaderboard.html">Leaderboard</a>
+          <a href="admin.html" id="adminNavLink" class="admin-only">Admin</a>
+          <a data-auth-link class="button ghost" href="login.html">Login</a>
+        </div>
+      </nav>
+    </header>
+
+    <main class="container page-shell">
+      <section class="page-title">
+        <p class="eyebrow">Admin controls</p>
+        <h1>Verification and reporting hub</h1>
+        <p class="muted">Review organizations, monitor referral counts, and read inquiries submitted by campus groups.</p>
+      </section>
+
+      <section class="stats-grid">
+        <article class="card stat-card">
+          <h3>Organizations signed up</h3>
+          <p id="adminOrgCount" class="stat-value">0</p>
+        </article>
+        <article class="card stat-card">
+          <h3>Total referrals</h3>
+          <p id="adminReferralCount" class="stat-value">0</p>
+        </article>
+        <article class="card stat-card">
+          <h3>Pending review</h3>
+          <p id="adminPendingCount" class="stat-value">0</p>
+        </article>
+      </section>
+
+      <section class="dashboard-row full admin-full-row">
+        <article class="card">
+          <div class="card-header">
+            <h2>Inquiries</h2>
+          </div>
+          <div id="inquiryFilterBar" class="admin-toolbar"></div>
+          <div id="inquiryList" class="mission-list"></div>
+        </article>
+      </section>
+
+      <section class="dashboard-grid admin-grid">
+        <article class="card">
+          <div class="card-header">
+            <h2>Monthly tracking</h2>
+          </div>
+          <div id="overallTrendChart" class="chart-card"></div>
+          <div id="monthlyStats" class="mission-list"></div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>Organizations</h2>
+            <button type="button" class="button danger small" id="purgePlaceholderOrgs">Delete all placeholder orgs</button>
+          </div>
+          <div id="organizationSelectList" class="mission-list"></div>
+        </article>
+      </section>
+
+      <section class="dashboard-row full admin-full-row">
+        <article class="card">
+          <div class="card-header">
+            <h2>Weekly referral encoder (2026)</h2>
+          </div>
+          <p class="muted">Select an organization, choose a week, and encode referrals. Entries update cumulative totals in the leaderboard.</p>
+          <form id="weeklyReferralForm" class="admin-encode-form">
+            <label>
+              Organization
+              <select id="weeklyOrgSelect" required></select>
+            </label>
+            <label>
+              Week range
+              <select id="weeklyRangeSelect" required></select>
+            </label>
+            <label>
+              Referrals
+              <input id="weeklyReferralCount" type="number" min="0" step="1" required placeholder="Enter referrals" />
+            </label>
+            <button type="submit" class="button primary">Save weekly referrals</button>
+          </form>
+          <div id="weeklyReferralStatus" class="form-message"></div>
+          <div id="weeklyEntryList" class="mission-list"></div>
+        </article>
+      </section>
+
+      <section class="dashboard-row full admin-full-row">
+        <article class="card">
+          <div class="card-header">
+            <h2>Organization applications and referral profiles</h2>
+            <div class="button-group-inline">
+              <button type="button" class="button secondary small" id="copySelectedReferrals">Copy selected</button>
+              <button type="button" class="button ghost small" id="copyAllReferrals">Copy all</button>
+            </div>
+          </div>
+          <p class="muted">Review pending applications, validate Shopee details, and approve organizations for campaign participation.</p>
+          <div id="adminReferralsToolbar" class="admin-toolbar"></div>
+          <div class="table-wrap">
+            <table class="leaderboard-table referral-table">
+              <thead>
+                <tr>
+                  <th>Select</th>
+                  <th>Created</th>
+                  <th>Referral</th>
+                  <th>Organization Name</th>
+                  <th>Organization Email</th>
+                  <th>Contact Person</th>
+                  <th>Position in the organization</th>
+                  <th>Contact Number</th>
+                  <th>Shopee Username</th>
+                  <th>Verified ShopeePay Screenshot</th>
+                  <th>Decline reason</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="adminReferralBody"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <div id="adminPasswordResetModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="adminPasswordResetTitle">
+      <div class="modal-card compact-modal">
+        <h2 id="adminPasswordResetTitle">Reset organization password</h2>
+        <p id="adminPasswordResetOrgLabel" class="muted"></p>
+        <form id="adminPasswordResetForm" class="auth-form compact">
+          <label>
+            New password
+            <input type="password" id="adminResetPasswordInput" required placeholder="Enter new password" />
+          </label>
+          <label>
+            Confirm new password
+            <input type="password" id="adminResetPasswordConfirm" required placeholder="Repeat new password" />
+          </label>
+          <p class="helper-text">Password must include at least one uppercase letter, one lowercase letter, and one number.</p>
+          <div class="button-group-inline" style="margin-top: 8px;">
+            <button type="submit" class="button primary">Save password</button>
+            <button type="button" class="button ghost" id="adminPasswordResetCancel">Cancel</button>
+          </div>
+        </form>
+        <p id="adminPasswordResetStatus" class="form-message"></p>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shopee After Class Club</title>
+    <meta name="description" content="Shopee After Class Club referral and reward tracking portal." />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <nav class="container nav">
+        <a class="brand" href="index.html">Shopee After Class Club</a>
+        <div class="nav-links">
+          <a href="index.html">Home</a>
+          <a href="acc.html">ACC</a>
+          <a href="leaderboard.html">Leaderboard</a>
+          <a href="admin.html" id="adminNavLink" class="admin-only">Admin</a>
+          <a data-auth-link class="button ghost" href="login.html">Login</a>
+        </div>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero container">
+        <div class="hero-copy-block">
+          <p class="eyebrow">Shopee Campus Challenge 2026</p>
+          <h1>Unlock reward tiers and earn campaign payouts through verified referrals.</h1>
+          <p class="hero-copy">
+            Student organizations can register, receive a marketing kit, track their referral progress, and qualify for campaign rewards tied to verified referrals.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="register.html">Join now</a>
+            <a class="button secondary" href="leaderboard.html">View campus leaderboard</a>
+          </div>
+          <div class="countdown-card">
+            <p class="countdown-label">Campaign ends on December 30, 2026</p>
+            <p class="countdown-value" id="campaignCountdown">Loading countdown...</p>
+          </div>
+        </div>
+        <div class="hero-visual" aria-hidden="true">
+          <div class="hero-banner-overlay">
+            <div class="hero-banner-title">Shopee Campus Challenge 2026</div>
+            <div class="hero-banner-subtitle">A student challenge where every verified referral turns effort into measurable rewards.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="container section-grid">
+        <article class="card compact-feature-card">
+          <h3>Referral System</h3>
+          <p>Organizations unlock campaign rewards for verified referrals once they reach the minimum qualification threshold and stay compliant.</p>
+        </article>
+        <article class="card compact-feature-card">
+          <h3>Trackable Dashboard</h3>
+          <p>Monitor weekly referrals, reward tier progress, and the next milestone through a clear dashboard designed for campus organizations.</p>
+        </article>
+        <article class="card compact-feature-card">
+          <h3>Marketing Kit</h3>
+          <p>Access your referral code, story assets, and campaign links as soon as your org is approved.</p>
+        </article>
+      </section>
+
+      <section class="container reward-section">
+        <div class="card">
+          <h2>Reward tiers</h2>
+          <div class="reward-grid">
+            <article class="reward-card grand">
+              <div class="reward-icon mono" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img"><circle cx="12" cy="9" r="5" fill="#fff" stroke="#111" stroke-width="2"/><path d="M9 14l-2 7 5-3 5 3-2-7" fill="#fff" stroke="#111" stroke-width="2" stroke-linejoin="round"/></svg>
+              </div>
+              <h3>Grand Champion</h3>
+              <p>#1 organization on the final leaderboard.</p>
+              <ul>
+                <li>15,000 pesos</li>
+                <li>Shopee Campus Champion Trophy</li>
+                <li>2 premium tech devices</li>
+                <li>Shopee merchandise kit</li>
+                <li>Networking session with Shopee</li>
+                <li>50 pesos per referral</li>
+              </ul>
+            </article>
+            <article class="reward-card diamond">
+              <div class="reward-icon mono" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img"><path d="M4 10l4-5h8l4 5-8 9z" fill="#fff" stroke="#111" stroke-width="2" stroke-linejoin="round"/></svg>
+              </div>
+              <h3>Diamond</h3>
+              <p>Organizations with 200+ qualified referrals.</p>
+              <ul>
+                <li>7,500 pesos</li>
+                <li>Shopee merchandise kit</li>
+                <li>Networking session with Shopee</li>
+                <li>50 pesos per referral</li>
+              </ul>
+            </article>
+            <article class="reward-card gold">
+              <div class="reward-icon mono" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img"><path d="M7 4h10l-2 7H9z" fill="#fff" stroke="#111" stroke-width="2" stroke-linejoin="round"/><path d="M12 11v9" stroke="#111" stroke-width="2"/><path d="M9 20h6" stroke="#111" stroke-width="2"/></svg>
+              </div>
+              <h3>Gold</h3>
+              <p>Organizations with 100+ qualified referrals.</p>
+              <ul>
+                <li>2,500 pesos</li>
+                <li>Shopee merchandise kit</li>
+                <li>50 pesos per referral</li>
+              </ul>
+            </article>
+            <article class="reward-card base">
+              <div class="reward-icon mono" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img"><rect x="5" y="5" width="14" height="14" rx="3" fill="#fff" stroke="#111" stroke-width="2"/><path d="M8 12h8" stroke="#111" stroke-width="2"/></svg>
+              </div>
+              <h3>Base Reward</h3>
+              <p>Organizations with 50+ qualified referrals.</p>
+              <ul>
+                <li>50 pesos per referral</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="container reminder-section">
+        <article class="card">
+          <h2>Program reminders</h2>
+          <ol class="reminder-list program-reminder-list">
+            <li>Organization contact persons must clearly indicate their intent to participate in the ACC referral program through email.</li>
+            <li>Each organization must use only one contact person and one organization email address; non-compliance may invalidate referrals associated with excess entries.</li>
+            <li>The designated contact person must maintain a verified ShopeePay account and an active Shopee username for program verification.</li>
+          </ol>
+        </article>
+      </section>
+
+      <section class="container feature-panel">
+        <div>
+          <p class="eyebrow">Campaign mechanics</p>
+          <h2>Complete all campaign stages to unlock verified referral tracking and payout eligibility.</h2>
+          <div class="campaign-period-box">
+            <strong>Campaign period</strong>
+            <p>The referral campaign runs from August to December.</p>
+          </div>
+          <div class="campaign-photo" aria-hidden="true"></div>
+        </div>
+        <div class="timeline">
+          <div class="timeline-step">
+            <div class="timeline-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img"><rect x="4" y="7" width="16" height="10" fill="#fff" stroke="#000" stroke-width="2" rx="2" ry="2"/><path d="M8 7v-2h8v2" fill="#fff" stroke="#000" stroke-width="2" stroke-linecap="round"/></svg>
+            </div>
+            <div>
+              <strong>1. Register</strong>
+              <p>Student organizations sign up with their official email.</p>
+            </div>
+          </div>
+          <div class="timeline-step">
+            <div class="timeline-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img"><path d="M5 13l4 4L19 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div>
+              <strong>2. Verify</strong>
+              <p>Registration remains pending until the contact details and ShopeePay screenshot are verified.</p>
+            </div>
+          </div>
+          <div class="timeline-step">
+            <div class="timeline-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img"><path d="M6 9h12v7H6z" fill="#fff" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 12h6" stroke="#000" stroke-width="2" stroke-linecap="round"/></svg>
+            </div>
+            <div>
+              <strong>3. Campaign</strong>
+              <p>Organizations execute referral movement and follow the official marketing kit guidelines throughout the campaign period.</p>
+            </div>
+          </div>
+          <div class="timeline-step">
+            <div class="timeline-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img"><path d="M7 12l3 3 7-7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><rect x="4" y="4" width="16" height="16" rx="3" ry="3" fill="none" stroke="#000" stroke-width="2"/></svg>
+            </div>
+            <div>
+              <strong>4. Claim</strong>
+              <p>Qualified organizations claim incentives based on verified referral totals and approved campaign compliance.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-content">
+        <span>© 2026 Shopee After Class Club</span>
+        <span>Campus Challenge Referral Portal</span>
+      </div>
+    </footer>
+
+    <script src="script.js"></script>
+  </body>
+</html>

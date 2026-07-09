@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Leaderboard | Shopee After Class Club</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body data-page="leaderboard" data-requires-auth="true">
+    <header class="site-header">
+      <nav class="container nav">
+        <a class="brand" href="index.html">Shopee After Class Club</a>
+        <div class="nav-links">
+          <a href="index.html">Home</a>
+          <a href="acc.html">ACC</a>
+          <a href="leaderboard.html">Leaderboard</a>
+          <a href="admin.html" id="adminNavLink" class="admin-only">Admin</a>
+          <a data-auth-link class="button ghost" href="login.html">Login</a>
+        </div>
+      </nav>
+    </header>
+
+    <main class="container page-shell">
+      <section class="page-title">
+        <p class="eyebrow">Campus leaderboard</p>
+        <h1>See the current standing of registered student organizations.</h1>
+        <p class="muted">The leaderboard reflects verified referrals and the end-of-campaign reward tiers each organization is eligible for.</p>
+      </section>
+
+      <section class="card">
+        <div id="awardSummary" class="award-summary"></div>
+        <div class="leaderboard-info">
+          <div class="tier-mini-grid">
+            <article class="tier-mini-box grand">
+              <h4>Grand Champion</h4>
+              <p>1st placer in the leaderboard, regardless of referral count.</p>
+            </article>
+            <article class="tier-mini-box diamond">
+              <h4>Diamond</h4>
+              <p>200+ qualified referrals.</p>
+            </article>
+            <article class="tier-mini-box gold">
+              <h4>Gold</h4>
+              <p>100+ qualified referrals.</p>
+            </article>
+            <article class="tier-mini-box base">
+              <h4>Base Reward</h4>
+              <p>50+ qualified referrals.</p>
+            </article>
+            <article class="tier-mini-box nonqual">
+              <h4>Non-Qualifier</h4>
+              <p>0-49 qualified referrals.</p>
+            </article>
+          </div>
+        </div>
+        <table class="leaderboard-table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Organization</th>
+              <th>University</th>
+              <th>Referrals</th>
+              <th>Reward Tier</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboardBody"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
