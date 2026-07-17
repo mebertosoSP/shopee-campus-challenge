@@ -57,7 +57,6 @@
           <div class="card-header">
             <h2>Monthly tracking</h2>
           </div>
-          <div id="overallTrendChart" class="chart-card"></div>
           <div id="monthlyStats" class="mission-list"></div>
         </article>
 
@@ -67,6 +66,59 @@
             <button type="button" class="button danger small" id="purgePlaceholderOrgs">Delete all placeholder orgs</button>
           </div>
           <div id="organizationSelectList" class="mission-list"></div>
+        </article>
+      </section>
+
+      <section class="dashboard-row full admin-full-row">
+        <article class="card">
+          <div class="card-header">
+            <h2>Referral code directory manager</h2>
+          </div>
+          <p class="muted">Search, add, edit, and delete organization referral codes. Changes are available immediately during application verification.</p>
+          <div class="referral-directory-layout">
+            <div class="referral-directory-browser">
+              <label class="referral-directory-search-wrap">
+                Search organizations or codes
+                <input id="referralDirectorySearch" type="search" placeholder="Type org name or code" />
+              </label>
+              <div id="referralDirectoryList" class="referral-directory-list"></div>
+              <div class="referral-directory-pagination">
+                <button type="button" class="button ghost small" id="referralDirectoryPrev">Previous</button>
+                <span id="referralDirectoryPageMeta" class="muted">Page 1</span>
+                <button type="button" class="button ghost small" id="referralDirectoryNext">Next</button>
+              </div>
+            </div>
+            <form id="referralDirectoryForm" class="referral-directory-form">
+              <h3 id="referralDirectoryFormTitle">Add referral entry</h3>
+              <label>
+                Organization name
+                <input id="referralDirectoryOrgName" type="text" required placeholder="Enter organization name" />
+              </label>
+              <label>
+                Referral code
+                <input id="referralDirectoryCode" type="text" required maxlength="12" placeholder="Example: UPD01R" />
+              </label>
+              <div class="button-group-inline">
+                <button type="submit" class="button primary small">Save entry</button>
+                <button type="button" class="button ghost small" id="referralDirectoryCancelEdit">Cancel edit</button>
+              </div>
+              <hr class="referral-directory-divider" />
+              <h3>Assign code to pending organization</h3>
+              <label>
+                Pending organization
+                <select id="referralPendingOrgSelect">
+                  <option value="">No pending organizations</option>
+                </select>
+              </label>
+              <label>
+                Referral directory entry
+                <input id="referralPendingCodeInput" type="search" list="referralDirectoryAssignOptions" placeholder="Search org name or code" />
+              </label>
+              <datalist id="referralDirectoryAssignOptions"></datalist>
+              <button type="button" class="button secondary small" id="assignPendingReferralCode">Assign to pending organization</button>
+              <p id="referralDirectoryStatus" class="form-message"></p>
+            </form>
+          </div>
         </article>
       </section>
 
@@ -107,6 +159,7 @@
           </div>
           <p class="muted">Review pending applications, validate Shopee details, and approve organizations for campaign participation.</p>
           <div id="adminReferralsToolbar" class="admin-toolbar"></div>
+          <datalist id="referralDirectoryOptions"></datalist>
           <div class="table-wrap">
             <table class="leaderboard-table referral-table">
               <thead>
@@ -156,6 +209,7 @@
       </div>
     </div>
 
+    <script src="referral_directory_seed.js"></script>
     <script src="script.js"></script>
   </body>
 </html>

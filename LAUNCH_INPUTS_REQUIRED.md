@@ -24,3 +24,21 @@ Please provide these before we execute final deployment:
 
 - If you need shared data across users, request backend+database first.
 - If this is demo/pilot only, static localStorage mode is acceptable.
+
+## Required for Netlify shared registrations and email verification
+
+1. Netlify environment variables:
+   - `RESEND_API_KEY`
+   - `EMAIL_FROM` (example: `ACC Team <no-reply@yourdomain.com>`)
+2. Email provider account:
+   - Resend account with verified sender domain
+3. Netlify Functions enabled:
+   - This project uses `netlify/functions/*` and Netlify Blobs for shared app state storage.
+   - Shared data (users, organizations, inquiries, referral directory) is persisted server-side.
+   - Login session uses browser session storage only for the active user id.
+
+## One-time deploy prep after pulling latest code
+
+1. Run `npm install`
+2. Deploy to Netlify
+3. Add `RESEND_API_KEY` and `EMAIL_FROM` in Netlify Project Settings > Environment Variables

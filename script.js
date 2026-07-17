@@ -1,11 +1,19 @@
-const STORAGE_KEY = 'shopee-after-class-club';
+const SESSION_USER_KEY = 'shopee-after-class-user-id';
 const ADMIN_EMAIL = 'miguel.bertoso@shopee.com';
 let adminSelectedOrgId = null;
 let adminReferralFilter = 'all';
 let adminDashboardOrgId = null;
 let adminInquiryFilter = 'pending';
 let adminResetPasswordOrgId = null;
-const CAMPAIGN_END_ISO = '2026-12-30T23:59:59';
+let adminReferralDirectoryQuery = '';
+let adminReferralDirectoryPage = 1;
+let adminEditingDirectoryId = null;
+let adminReferralDirectoryStatusMessage = '';
+let pendingRegistrationDraft = null;
+const CAMPAIGN_END_ISO = '2026-10-03T23:59:59';
+const REFERRAL_DIRECTORY_PAGE_SIZE = 8;
+const FUNCTIONS_BASE = '/.netlify/functions';
+let saveStateTimer = null;
 const DECLINE_REASONS = [
   'Acronym is not appropriate.',
   'Email is invalid.',
@@ -16,6 +24,83 @@ const DECLINE_REASONS = [
   'University not found.',
   'Other.'
 ];
+
+function sanitizeReferralCode(code) {
+  return (code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+}
+
+function parseReferralDirectorySeed(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  const entries = [];
+  raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const columns = line.split('\t').map((value) => value.trim()).filter(Boolean);
+      if (columns.length < 2) return;
+      const code = sanitizeReferralCode(columns[columns.length - 1]);
+      const name = columns.slice(0, columns.length - 1).join(' ').trim();
+      if (!code || !name || code === 'REFERRALCODE') return;
+      entries.push({ name, code });
+    });
+  return entries;
+}
+
+const SEEDED_REFERRAL_DIRECTORY = parseReferralDirectorySeed(window.REFERRAL_DIRECTORY_TSV || '');
+
+function normalizeReferralDirectory(parsedDirectory, organizations) {
+  const merged = [];
+  const seenCodes = new Set();
+  let generatedId = (parsedDirectory || []).reduce((maxId, entry) => Math.max(maxId, Number(entry?.id) || 0), 0) + 1;
+
+  const pushEntry = (name, code, id = null) => {
+    const cleanName = (name || '').trim();
+    const cleanCode = sanitizeReferralCode(code);
+    if (!cleanName || !cleanCode) return;
+    if (seenCodes.has(cleanCode)) return;
+    seenCodes.add(cleanCode);
+    merged.push({
+      id: Number(id) || generatedId++,
+      name: cleanName,
+      code: cleanCode
+    });
+  };
+
+  SEEDED_REFERRAL_DIRECTORY.forEach((entry) => pushEntry(entry.name, entry.code));
+  (parsedDirectory || []).forEach((entry) => pushEntry(entry?.name, entry?.code, entry?.id));
+  (organizations || []).forEach((org) => {
+    if (org?.referralCode) {
+      pushEntry(org.name, org.referralCode);
+    }
+  });
+
+  return merged.map((entry, index) => ({
+    id: Number(entry.id) || index + 1,
+    name: entry.name,
+    code: entry.code
+  }));
+}
+
+function findDirectoryMatch(directory, rawInput) {
+  const input = (rawInput || '').trim();
+  if (!input) return null;
+
+  const exactCode = sanitizeReferralCode(input);
+  if (exactCode) {
+    const codeMatch = (directory || []).find((entry) => entry.code === exactCode);
+    if (codeMatch) return codeMatch;
+  }
+
+  const optionCode = sanitizeReferralCode(input.split('|').pop());
+  if (optionCode) {
+    const optionMatch = (directory || []).find((entry) => entry.code === optionCode);
+    if (optionMatch) return optionMatch;
+  }
+
+  const lowered = input.toLowerCase();
+  return (directory || []).find((entry) => entry.name.toLowerCase() === lowered) || null;
+}
 
 function buildSampleReferrals(acronym, count) {
   return Array.from({ length: count }).map((_, index) => {
@@ -32,17 +117,17 @@ function buildSampleReferrals(acronym, count) {
 }
 
 const DEFAULT_ORGANIZATIONS = [
-  { id: 1, name: 'Ateneo Campus Society', acronym: 'ACS', university: 'Ateneo de Manila University', qualifiedReferrals: 240, weeklyReferrals: 32, valid: true, compliant: true, inquiries: [], referralCode: 'ACS-4201', referrals: buildSampleReferrals('ACS', 10) },
-  { id: 2, name: 'UP Lasallian Network', acronym: 'ULN', university: 'University of the Philippines', qualifiedReferrals: 210, weeklyReferrals: 25, valid: true, compliant: true, inquiries: [], referralCode: 'ULN-4102', referrals: buildSampleReferrals('ULN', 9) },
-  { id: 3, name: 'Mapua Campus Creators', acronym: 'MCC', university: 'Mapua University', qualifiedReferrals: 180, weeklyReferrals: 18, valid: true, compliant: true, inquiries: [], referralCode: 'MCC-3803', referrals: buildSampleReferrals('MCC', 8) },
-  { id: 4, name: 'UST Community Launch', acronym: 'UCL', university: 'University of Santo Tomas', qualifiedReferrals: 165, weeklyReferrals: 20, valid: true, compliant: true, inquiries: [], referralCode: 'UCL-3604', referrals: buildSampleReferrals('UCL', 8) },
-  { id: 5, name: 'De La Salle Spark Lab', acronym: 'DSL', university: 'De La Salle University', qualifiedReferrals: 155, weeklyReferrals: 14, valid: true, compliant: true, inquiries: [], referralCode: 'DSL-3405', referrals: buildSampleReferrals('DSL', 7) },
-  { id: 6, name: 'FEU Innovation Club', acronym: 'FIC', university: 'Far Eastern University', qualifiedReferrals: 132, weeklyReferrals: 12, valid: true, compliant: true, inquiries: [], referralCode: 'FIC-3306', referrals: buildSampleReferrals('FIC', 6) },
-  { id: 7, name: 'Adamson Youth Hub', acronym: 'AYH', university: 'Adamson University', qualifiedReferrals: 118, weeklyReferrals: 10, valid: true, compliant: true, inquiries: [], referralCode: 'AYH-3207', referrals: buildSampleReferrals('AYH', 6) },
-  { id: 8, name: 'Polytechnic Pulse', acronym: 'PPP', university: 'Polytechnic University of the Philippines', qualifiedReferrals: 104, weeklyReferrals: 9, valid: true, compliant: true, inquiries: [], referralCode: 'PPP-3108', referrals: buildSampleReferrals('PPP', 6) },
-  { id: 9, name: 'NU Campus Collective', acronym: 'NUC', university: 'National University', qualifiedReferrals: 92, weeklyReferrals: 8, valid: true, compliant: true, inquiries: [], referralCode: 'NUC-3009', referrals: buildSampleReferrals('NUC', 5) },
-  { id: 10, name: 'CEU Future Leaders', acronym: 'CFL', university: 'Centro Escolar University', qualifiedReferrals: 72, weeklyReferrals: 7, valid: true, compliant: true, inquiries: [], referralCode: 'CFL-2910', referrals: buildSampleReferrals('CFL', 5) },
-  { id: 11, name: 'Lyceum Rise Club', acronym: 'LRC', university: 'Lyceum of the Philippines University', qualifiedReferrals: 42, weeklyReferrals: 6, valid: true, compliant: true, inquiries: [], referralCode: 'LRC-2711', referrals: buildSampleReferrals('LRC', 4) }
+  { id: 1, name: 'Ateneo Campus Society', acronym: 'ACS', university: 'Ateneo de Manila University', qualifiedReferrals: 240, weeklyReferrals: 32, valid: true, compliant: true, inquiries: [], referralCode: 'ACS4201', referrals: buildSampleReferrals('ACS', 10) },
+  { id: 2, name: 'UP Lasallian Network', acronym: 'ULN', university: 'University of the Philippines', qualifiedReferrals: 210, weeklyReferrals: 25, valid: true, compliant: true, inquiries: [], referralCode: 'ULN4102', referrals: buildSampleReferrals('ULN', 9) },
+  { id: 3, name: 'Mapua Campus Creators', acronym: 'MCC', university: 'Mapua University', qualifiedReferrals: 180, weeklyReferrals: 18, valid: true, compliant: true, inquiries: [], referralCode: 'MCC3803', referrals: buildSampleReferrals('MCC', 8) },
+  { id: 4, name: 'UST Community Launch', acronym: 'UCL', university: 'University of Santo Tomas', qualifiedReferrals: 165, weeklyReferrals: 20, valid: true, compliant: true, inquiries: [], referralCode: 'UCL3604', referrals: buildSampleReferrals('UCL', 8) },
+  { id: 5, name: 'De La Salle Spark Lab', acronym: 'DSL', university: 'De La Salle University', qualifiedReferrals: 155, weeklyReferrals: 14, valid: true, compliant: true, inquiries: [], referralCode: 'DSL3405', referrals: buildSampleReferrals('DSL', 7) },
+  { id: 6, name: 'FEU Innovation Club', acronym: 'FIC', university: 'Far Eastern University', qualifiedReferrals: 132, weeklyReferrals: 12, valid: true, compliant: true, inquiries: [], referralCode: 'FIC3306', referrals: buildSampleReferrals('FIC', 6) },
+  { id: 7, name: 'Adamson Youth Hub', acronym: 'AYH', university: 'Adamson University', qualifiedReferrals: 118, weeklyReferrals: 10, valid: true, compliant: true, inquiries: [], referralCode: 'AYH3207', referrals: buildSampleReferrals('AYH', 6) },
+  { id: 8, name: 'Polytechnic Pulse', acronym: 'PPP', university: 'Polytechnic University of the Philippines', qualifiedReferrals: 104, weeklyReferrals: 9, valid: true, compliant: true, inquiries: [], referralCode: 'PPP3108', referrals: buildSampleReferrals('PPP', 6) },
+  { id: 9, name: 'NU Campus Collective', acronym: 'NUC', university: 'National University', qualifiedReferrals: 92, weeklyReferrals: 8, valid: true, compliant: true, inquiries: [], referralCode: 'NUC3009', referrals: buildSampleReferrals('NUC', 5) },
+  { id: 10, name: 'CEU Future Leaders', acronym: 'CFL', university: 'Centro Escolar University', qualifiedReferrals: 72, weeklyReferrals: 7, valid: true, compliant: true, inquiries: [], referralCode: 'CFL2910', referrals: buildSampleReferrals('CFL', 5) },
+  { id: 11, name: 'Lyceum Rise Club', acronym: 'LRC', university: 'Lyceum of the Philippines University', qualifiedReferrals: 42, weeklyReferrals: 6, valid: true, compliant: true, inquiries: [], referralCode: 'LRC2711', referrals: buildSampleReferrals('LRC', 4) }
 ];
 
 function buildTrend(referrals) {
@@ -60,7 +145,7 @@ function buildTrend(referrals) {
 function generateReferralCode(acronym) {
   const clean = (acronym || 'ACC').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'ACC';
   const suffix = String(Math.floor(1000 + Math.random() * 9000));
-  return `${clean}-${suffix}`;
+  return `${clean}${suffix}`;
 }
 
 function generateUniqueReferralCode(state, acronym, skipOrgId = null) {
@@ -81,6 +166,161 @@ function toDataUrl(file) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function normalizeEmail(email) {
+  return (email || '').trim().toLowerCase();
+}
+
+async function callBackend(functionName, payload = {}) {
+  const response = await fetch(`${FUNCTIONS_BASE}/${functionName}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  let data = null;
+  try {
+    data = await response.json();
+  } catch (_error) {
+    data = null;
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.message || 'Request failed.');
+  }
+
+  return data || {};
+}
+
+async function syncServerRegistrationsIntoState(state) {
+  try {
+    const result = await callBackend('list-registrations', {});
+    const records = Array.isArray(result.registrations) ? result.registrations : [];
+    if (!records.length) return;
+
+    let changed = false;
+    records.forEach((record) => {
+      const organization = record?.organization;
+      const user = record?.user;
+      if (!organization || !user) return;
+
+      const orgExists = state.organizations.some((entry) => Number(entry.id) === Number(organization.id) || normalizeEmail(entry.email) === normalizeEmail(organization.email));
+      if (!orgExists) {
+        state.organizations.push(organization);
+        changed = true;
+      }
+
+      const userExists = state.users.some((entry) => Number(entry.id) === Number(user.id) || normalizeEmail(entry.email) === normalizeEmail(user.email));
+      if (!userExists) {
+        state.users.push(user);
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      saveState(state);
+    }
+  } catch (_error) {
+    // Keep local mode functional even if backend is unavailable.
+  }
+}
+
+async function pushRegistrationToServer(newOrg, newUser) {
+  return callBackend('register-organization', {
+    organization: newOrg,
+    user: newUser
+  });
+}
+
+async function requestEmailCode(email) {
+  return callBackend('send-email-code', { email });
+}
+
+async function verifyEmailCode(email, code) {
+  return callBackend('verify-email-code', { email, code });
+}
+
+async function sendDenialEmail(email, organizationName, reason) {
+  return callBackend('send-denial-email', {
+    email,
+    organizationName,
+    reason
+  });
+}
+
+function buildDefaultState() {
+  return {
+    users: [
+      { id: 1, name: 'Miguel Bertoso', email: ADMIN_EMAIL, password: 'admin123', role: 'admin', organizationId: 1, points: 240, weeklyReferrals: 32, rewardTier: 'Grand Champion' }
+    ],
+    organizations: DEFAULT_ORGANIZATIONS,
+    inquiries: [],
+    referralDirectory: [],
+    currentUserId: null
+  };
+}
+
+function readSessionUserId() {
+  const raw = window.sessionStorage.getItem(SESSION_USER_KEY);
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function writeSessionUserId(userId) {
+  if (userId) {
+    window.sessionStorage.setItem(SESSION_USER_KEY, String(userId));
+  } else {
+    window.sessionStorage.removeItem(SESSION_USER_KEY);
+  }
+}
+
+function extractSharedState(state) {
+  return {
+    users: state.users || [],
+    organizations: state.organizations || [],
+    inquiries: state.inquiries || [],
+    referralDirectory: state.referralDirectory || []
+  };
+}
+
+async function persistSharedState(state) {
+  await callBackend('save-app-state', { state: extractSharedState(state) });
+}
+
+function queuePersistSharedState(state) {
+  if (saveStateTimer) {
+    window.clearTimeout(saveStateTimer);
+  }
+  saveStateTimer = window.setTimeout(() => {
+    persistSharedState(state).catch(() => {
+      // Keep UI usable even if backend persistence temporarily fails.
+    });
+  }, 120);
+}
+
+async function loadStateFromServer() {
+  const fallback = normalizeState(buildDefaultState());
+  fallback.currentUserId = readSessionUserId();
+
+  try {
+    const result = await callBackend('get-app-state', {});
+    const hasServerState = Boolean(result?.state && Array.isArray(result.state.organizations));
+    if (!hasServerState) {
+      await persistSharedState(fallback);
+      return fallback;
+    }
+
+    const normalized = normalizeState({
+      ...result.state,
+      currentUserId: readSessionUserId()
+    });
+    return normalized;
+  } catch (_error) {
+    return fallback;
+  }
 }
 
 function normalizeState(parsed) {
@@ -104,7 +344,7 @@ function normalizeState(parsed) {
         shopeePayScreenshotName: org.profile?.shopeePayScreenshotName || org.shopeePayScreenshotName || '',
         shopeePayScreenshotData: org.profile?.shopeePayScreenshotData || ''
       },
-      referralCode: org.referralCode || generateReferralCode(org.acronym || org.name),
+      referralCode: sanitizeReferralCode(org.referralCode || ''),
       trend: org.trend || buildTrend(org.qualifiedReferrals),
       seedReferrals: Number.isFinite(org.seedReferrals) ? org.seedReferrals : org.qualifiedReferrals,
       weeklyEntries: Array.isArray(org.weeklyEntries) ? org.weeklyEntries : [],
@@ -118,18 +358,28 @@ function normalizeState(parsed) {
 
   const usedCodes = new Set();
   organizations.forEach((org) => {
-    if (!org.referralCode || usedCodes.has(org.referralCode)) {
+    if (org.referralCode && usedCodes.has(org.referralCode)) {
       org.referralCode = generateReferralCode(org.acronym || org.name);
       while (usedCodes.has(org.referralCode)) {
         org.referralCode = generateReferralCode(org.acronym || org.name);
       }
     }
-    usedCodes.add(org.referralCode);
+    if (org.referralCode) {
+      usedCodes.add(org.referralCode);
+    }
+    if (org.verificationStatus === 'approved' && !org.referralCode) {
+      org.verificationStatus = 'pending';
+      org.valid = false;
+      org.compliant = false;
+    }
   });
+
+  const referralDirectory = normalizeReferralDirectory(parsed.referralDirectory, organizations);
 
   return {
     ...parsed,
     organizations,
+    referralDirectory,
     inquiries: (parsed.inquiries || []).map((inquiry) => ({
       ...inquiry,
       orgId: inquiry.orgId || organizations.find((org) => org.name === inquiry.orgName || (inquiry.orgLabel || '').startsWith(org.name))?.id || null,
@@ -145,27 +395,9 @@ function normalizeState(parsed) {
   };
 }
 
-function loadState() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    const initial = {
-      users: [
-        { id: 1, name: 'Miguel Bertoso', email: ADMIN_EMAIL, password: 'admin123', role: 'admin', organizationId: 1, points: 240, weeklyReferrals: 32, rewardTier: 'Grand Champion' }
-      ],
-      organizations: DEFAULT_ORGANIZATIONS,
-      inquiries: [],
-      currentUserId: null
-    };
-    saveState(normalizeState(initial));
-    return normalizeState(initial);
-  }
-
-  const parsed = JSON.parse(raw);
-  return normalizeState(parsed);
-}
-
 function saveState(state) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  writeSessionUserId(state.currentUserId || null);
+  queuePersistSharedState(state);
 }
 
 function getCurrentUser(state) {
@@ -284,9 +516,9 @@ function getAwardData(org, rank) {
   if (rank === 1) {
     return {
       tier: 'Grand Champion',
-      reward: '15,000 pesos + Shopee Campus Champion Trophy + 2 premium tech devices + Shopee merchandise kit + networking session with Shopee + 50 pesos per referral',
-      payoutText: '15,000 pesos + 50 pesos per referral',
-      highlight: 'Grand Champion is the #1 organization in the leaderboard regardless of referral count.',
+      reward: '20,000 pesos cash, exclusive networking session with Shopee',
+      payoutText: '20,000 pesos cash',
+      highlight: 'Top performer in the leaderboard regardless of tier.',
       tierClass: 'grand'
     };
   }
@@ -294,9 +526,9 @@ function getAwardData(org, rank) {
   if (!isQualified) {
     return {
       tier: 'Non-Qualifier',
-      reward: 'Quota not reached for per-referral payout.',
+      reward: 'Below minimum quota',
       payoutText: 'Not yet eligible',
-      highlight: 'Needs at least 50 qualified referrals to qualify for 50 pesos per referral.',
+      highlight: 'Base threshold starts at 50 validated referrals',
       tierClass: 'ineligible'
     };
   }
@@ -304,9 +536,9 @@ function getAwardData(org, rank) {
   if (org.qualifiedReferrals >= 200) {
     return {
       tier: 'Diamond',
-      reward: '7,500 pesos + Shopee merchandise kit + networking session with Shopee + 50 pesos per referral',
-      payoutText: '7,500 pesos + 50 pesos per referral',
-      highlight: '200+ qualified referrals.',
+      reward: '8,500 pesos cash',
+      payoutText: '8,500 pesos cash',
+      highlight: 'Minimum 200, maximum 300',
       tierClass: 'diamond'
     };
   }
@@ -314,18 +546,18 @@ function getAwardData(org, rank) {
   if (org.qualifiedReferrals >= 100) {
     return {
       tier: 'Gold',
-      reward: '2,500 pesos + Shopee merchandise kit + 50 pesos per referral',
-      payoutText: '2,500 pesos + 50 pesos per referral',
-      highlight: '100+ qualified referrals.',
+      reward: '4,500 pesos cash',
+      payoutText: '4,500 pesos cash',
+      highlight: 'Minimum 100',
       tierClass: 'gold'
     };
   }
 
   return {
     tier: 'Base Reward',
-    reward: '50 pesos per referral',
-    payoutText: '50 pesos per referral',
-    highlight: '50+ qualified referrals.',
+    reward: '50 pesos per validated referral',
+    payoutText: '50 pesos per validated referral',
+    highlight: 'Minimum 50',
     tierClass: 'base'
   };
 }
@@ -334,29 +566,53 @@ function getProgressTier(referrals) {
   if (referrals >= 200) {
     return {
       tier: 'Diamond Level',
-      note: '200 and higher: Quota reached to avail of the 50 pesos per referral and Diamond Tier rewards.',
+      note: 'Diamond: 8,500 pesos cash, minimum 200, maximum 300.',
       levelClass: 'level-diamond'
     };
   }
-  if (referrals >= 125) {
+  if (referrals >= 100) {
     return {
       tier: 'Gold Level',
-      note: '125 to 199: Quota reached to avail of the 50 pesos per referral and Gold Tier rewards.',
+      note: 'Gold: 4,500 pesos cash, minimum 100.',
       levelClass: 'level-gold'
     };
   }
   if (referrals >= 50) {
     return {
-      tier: 'Qualifier Level',
-      note: '50 to 124: Quota reached to avail of the 50 pesos per referral.',
+      tier: 'Base Reward Level',
+      note: 'Range 50 to 99: 50 pesos per validated referral.',
       levelClass: 'level-base'
     };
   }
   return {
-    tier: 'Non-Qualifier Level',
-    note: '0 to 49: Quota not reached to avail of the 50 pesos per referral.',
+    tier: 'Base Reward Track',
+    note: 'Range 0 to 49: below base threshold of 50 validated referrals.',
     levelClass: 'level-nonqual'
   };
+}
+
+function getMonthBucketIndex(dateLike) {
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return -1;
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  if (year === 2026 && month >= 7 && month <= 11) {
+    return month - 7;
+  }
+  if (year === 2027 && month === 0) {
+    return 5;
+  }
+  return -1;
+}
+
+function buildMonthlyPerformanceFromWeeklyEntries(weeklyEntries) {
+  const monthly = [0, 0, 0, 0, 0, 0];
+  (weeklyEntries || []).forEach((entry) => {
+    const index = getMonthBucketIndex(entry.startISO);
+    if (index < 0) return;
+    monthly[index] += Number(entry.count || 0);
+  });
+  return monthly;
 }
 
 function getCurrentOrganization(state, user) {
@@ -398,6 +654,7 @@ function recomputeOrgTotals(org) {
   org.qualifiedReferrals = (Number(org.seedReferrals) || 0) + weeklyTotal;
   const sortedEntries = [...(org.weeklyEntries || [])].sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
   org.weeklyReferrals = sortedEntries.length ? Number(sortedEntries[sortedEntries.length - 1].count || 0) : 0;
+  org.monthlyPerformance = buildMonthlyPerformanceFromWeeklyEntries(org.weeklyEntries || []);
   org.trend = buildTrend(org.qualifiedReferrals);
 }
 
@@ -470,10 +727,17 @@ function renderCampaignCountdown() {
 }
 
 function getReferralPayoutText(referrals) {
+  const basePayout = referrals * 50;
   if (referrals < 50) {
-    return `Not eligible yet (minimum 50 required). Current formula: 50 x ${referrals} = ${referrals * 50} pesos`;
+    return `Not eligible, minimum 50, running total 50 x ${referrals} = ${basePayout} pesos`;
   }
-  return `50 x ${referrals} = ${referrals * 50} pesos`;
+  if (referrals >= 200) {
+    return `Base payout 50 x ${referrals} = ${basePayout} pesos, Diamond cash 8,500 pesos`;
+  }
+  if (referrals >= 100) {
+    return `Base payout 50 x ${referrals} = ${basePayout} pesos, Gold cash 4,500 pesos`;
+  }
+  return `Base payout 50 x ${referrals} = ${basePayout} pesos`;
 }
 
 function setDashboardMetricAccent(organization) {
@@ -515,7 +779,7 @@ function renderDashboardProfileTable(state, organization) {
     <tr>
       <td><input type="checkbox" checked disabled /></td>
       <td>${created.toLocaleString()}</td>
-      <td>${organization.referralCode || '-'}</td>
+      <td>${organization.referralCode || 'Unassigned'}</td>
       <td>${organization.name || '-'}</td>
       <td>${organization.email || '-'}</td>
       <td>${profile.contactPerson || '-'}</td>
@@ -569,7 +833,10 @@ function renderDashboard(state) {
   const rank = state.organizations.slice().sort((a, b) => b.qualifiedReferrals - a.qualifiedReferrals).findIndex((org) => org.id === organization.id) + 1;
   const award = getAwardData(organization, rank);
 
-  document.getElementById('userName').textContent = currentUser.name.split(' ')[0];
+  const dashboardName = currentUser.role === 'admin'
+    ? currentUser.name
+    : ((organization.profile?.contactPerson || '').trim() || currentUser.name);
+  document.getElementById('userName').textContent = dashboardName;
   document.getElementById('orgName').textContent = organization.name;
   if (currentUser.role === 'admin' && adminWrap && adminSelect) {
     adminWrap.style.display = 'inline-block';
@@ -605,7 +872,7 @@ function renderDashboard(state) {
     document.getElementById('progressTierNote').textContent = 'Your organization is waiting for admin verification.';
     document.getElementById('progressFill').style.width = '0%';
     document.getElementById('progressFill').className = 'level-nonqual';
-    document.getElementById('orgReferralCode').textContent = organization.referralCode;
+    document.getElementById('orgReferralCode').textContent = organization.referralCode || 'Unassigned';
     setDashboardMetricAccent(organization);
     return;
   }
@@ -614,12 +881,12 @@ function renderDashboard(state) {
   document.getElementById('tierValue').textContent = award.tier;
   document.getElementById('weeklyReferrals').textContent = organization.weeklyReferrals;
   const nextTier = organization.qualifiedReferrals >= 200
-    ? 'Maintain Diamond level or aim for #1 accolade'
+    ? 'Diamond range met, maintain performance up to 300 and compete for Rank 1'
     : organization.qualifiedReferrals >= 100
-      ? 'Diamond (200+)'
+      ? 'Diamond Tier at 200 to 300 validated referrals'
       : organization.qualifiedReferrals >= 50
-        ? 'Gold (100+)'
-        : 'Qualifier threshold (50+)';
+        ? 'Gold Tier at 100 to 199 validated referrals'
+        : 'Base threshold at 50 validated referrals';
   document.getElementById('nextTierValue').textContent = nextTier;
   document.getElementById('estimatedPayout').textContent = getReferralPayoutText(organization.qualifiedReferrals);
   document.getElementById('verificationStatus').textContent = organization.verificationStatus === 'approved'
@@ -644,7 +911,7 @@ function renderDashboard(state) {
     `;
   }
 
-  document.getElementById('orgReferralCode').textContent = organization.referralCode;
+  document.getElementById('orgReferralCode').textContent = organization.referralCode || 'Unassigned';
   setDashboardMetricAccent(organization);
   renderDashboardProfileTable(state, organization);
   renderInquiryThread(state, organization.id);
@@ -715,7 +982,13 @@ function openOrganizationModal(state, org) {
 }
 
 function getMonthlySeries(org) {
-  return org.monthlyPerformance || org.trend || buildTrend(org.qualifiedReferrals);
+  if (Array.isArray(org.monthlyPerformance) && org.monthlyPerformance.length === 6) {
+    return org.monthlyPerformance;
+  }
+  if (Array.isArray(org.weeklyEntries) && org.weeklyEntries.length) {
+    return buildMonthlyPerformanceFromWeeklyEntries(org.weeklyEntries);
+  }
+  return org.trend || buildTrend(org.qualifiedReferrals);
 }
 
 function openMonthModal(state, monthIndex) {
@@ -748,18 +1021,10 @@ function openMonthModal(state, monthIndex) {
 }
 
 function renderAdmin(state) {
+  state.referralDirectory = normalizeReferralDirectory(state.referralDirectory, state.organizations);
   document.getElementById('adminOrgCount').textContent = state.organizations.length;
   document.getElementById('adminReferralCount').textContent = state.organizations.reduce((sum, org) => sum + org.qualifiedReferrals, 0);
   document.getElementById('adminPendingCount').textContent = state.organizations.filter((org) => org.verificationStatus !== 'approved').length;
-
-  const overallTrend = state.organizations.reduce((acc, org) => {
-    const values = org.trend || buildTrend(org.qualifiedReferrals);
-    values.forEach((value, index) => {
-      acc[index] = (acc[index] || 0) + value;
-    });
-    return acc;
-  }, []);
-  renderTrendChart(document.getElementById('overallTrendChart'), overallTrend, 'Overall referral trend');
 
   const monthlyStats = document.getElementById('monthlyStats');
   if (monthlyStats) {
@@ -913,6 +1178,7 @@ function renderAdmin(state) {
   }
 
   renderAdminReferralsPanel(state);
+  renderReferralDirectoryManager(state);
   renderWeeklyEncoder(state, getSelectedOrganization(state)?.id || null);
 }
 
@@ -1046,10 +1312,244 @@ function getFilteredReferrals(state) {
   return all.filter((org) => org.verificationStatus !== 'approved');
 }
 
+function upsertDirectoryEntry(state, name, code, skipEntryId = null) {
+  const cleanName = (name || '').trim();
+  const cleanCode = sanitizeReferralCode(code);
+  if (!cleanName || !cleanCode) {
+    return { ok: false, message: 'Organization name and referral code are required.' };
+  }
+
+  const skipId = Number(skipEntryId) || null;
+  const duplicate = (state.referralDirectory || []).find((entry) => (
+    sanitizeReferralCode(entry.code) === cleanCode
+    && Number(entry.id) !== skipId
+  ));
+  if (duplicate) {
+    return { ok: false, message: `Referral code already exists for ${duplicate.name}.` };
+  }
+
+  if (!Array.isArray(state.referralDirectory)) {
+    state.referralDirectory = [];
+  }
+
+  if (skipEntryId) {
+    const target = state.referralDirectory.find((entry) => entry.id === skipEntryId);
+    if (!target) {
+      return { ok: false, message: 'The selected entry could not be found.' };
+    }
+    target.name = cleanName;
+    target.code = cleanCode;
+    return { ok: true, entry: target, updated: true };
+  }
+
+  const nextId = (state.referralDirectory || []).reduce((maxId, entry) => Math.max(maxId, Number(entry.id) || 0), 0) + 1;
+  const entry = { id: nextId, name: cleanName, code: cleanCode };
+  state.referralDirectory.push(entry);
+  return { ok: true, entry, updated: false };
+}
+
+function syncOrganizationCodeToDirectory(state, organization) {
+  if (!organization?.referralCode) return;
+  const existing = (state.referralDirectory || []).find((entry) => entry.code === organization.referralCode);
+  if (existing) return;
+  upsertDirectoryEntry(state, organization.name, organization.referralCode);
+}
+
+function renderReferralDirectoryManager(state) {
+  const searchInput = document.getElementById('referralDirectorySearch');
+  const list = document.getElementById('referralDirectoryList');
+  const pageMeta = document.getElementById('referralDirectoryPageMeta');
+  const prevButton = document.getElementById('referralDirectoryPrev');
+  const nextButton = document.getElementById('referralDirectoryNext');
+  const form = document.getElementById('referralDirectoryForm');
+  const formTitle = document.getElementById('referralDirectoryFormTitle');
+  const orgInput = document.getElementById('referralDirectoryOrgName');
+  const codeInput = document.getElementById('referralDirectoryCode');
+  const cancelButton = document.getElementById('referralDirectoryCancelEdit');
+  const status = document.getElementById('referralDirectoryStatus');
+  const pendingOrgSelect = document.getElementById('referralPendingOrgSelect');
+  const pendingCodeInput = document.getElementById('referralPendingCodeInput');
+  const assignPendingButton = document.getElementById('assignPendingReferralCode');
+  const assignOptions = document.getElementById('referralDirectoryAssignOptions');
+  if (!searchInput || !list || !pageMeta || !prevButton || !nextButton || !form || !formTitle || !orgInput || !codeInput || !cancelButton || !status || !pendingOrgSelect || !pendingCodeInput || !assignPendingButton || !assignOptions) {
+    return;
+  }
+
+  const query = adminReferralDirectoryQuery.trim().toLowerCase();
+  const sorted = [...(state.referralDirectory || [])].sort((a, b) => a.name.localeCompare(b.name));
+  const filtered = sorted.filter((entry) => {
+    if (!query) return true;
+    return entry.name.toLowerCase().includes(query) || entry.code.toLowerCase().includes(query);
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / REFERRAL_DIRECTORY_PAGE_SIZE));
+  adminReferralDirectoryPage = Math.min(totalPages, Math.max(1, adminReferralDirectoryPage));
+  const start = (adminReferralDirectoryPage - 1) * REFERRAL_DIRECTORY_PAGE_SIZE;
+  const visible = filtered.slice(start, start + REFERRAL_DIRECTORY_PAGE_SIZE);
+
+  searchInput.value = adminReferralDirectoryQuery;
+  pageMeta.textContent = `Page ${adminReferralDirectoryPage} of ${totalPages} (${filtered.length} entries)`;
+  prevButton.disabled = adminReferralDirectoryPage <= 1;
+  nextButton.disabled = adminReferralDirectoryPage >= totalPages;
+  status.textContent = adminReferralDirectoryStatusMessage;
+
+  const pendingOrganizations = state.organizations
+    .filter((org) => org.verificationStatus === 'pending')
+    .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+  pendingOrgSelect.innerHTML = pendingOrganizations.length
+    ? pendingOrganizations.map((org) => `<option value="${org.id}">${org.name}</option>`).join('')
+    : '<option value="">No pending organizations</option>';
+
+  assignOptions.innerHTML = sorted
+    .map((entry) => `<option value="${entry.name} | ${entry.code}"></option>`)
+    .join('');
+
+  if (!visible.length) {
+    list.innerHTML = '<div class="mission-item"><span>No referral entries found for this search.</span></div>';
+  } else {
+    list.innerHTML = visible.map((entry) => `
+      <div class="mission-item referral-directory-item">
+        <div>
+          <strong>${entry.name}</strong>
+          <p class="muted">${entry.code}</p>
+        </div>
+        <div class="button-group-inline">
+          <button type="button" class="button ghost small" data-dir-action="edit" data-dir-id="${entry.id}">Edit</button>
+          <button type="button" class="button ghost small danger" data-dir-action="delete" data-dir-id="${entry.id}">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  formTitle.textContent = adminEditingDirectoryId ? 'Edit referral entry' : 'Add referral entry';
+  if (!adminEditingDirectoryId) {
+    orgInput.value = '';
+    codeInput.value = '';
+  }
+
+  searchInput.oninput = () => {
+    adminReferralDirectoryQuery = searchInput.value;
+    adminReferralDirectoryPage = 1;
+    renderReferralDirectoryManager(state);
+  };
+
+  prevButton.onclick = () => {
+    if (adminReferralDirectoryPage <= 1) return;
+    adminReferralDirectoryPage -= 1;
+    renderReferralDirectoryManager(state);
+  };
+
+  nextButton.onclick = () => {
+    if (adminReferralDirectoryPage >= totalPages) return;
+    adminReferralDirectoryPage += 1;
+    renderReferralDirectoryManager(state);
+  };
+
+  cancelButton.onclick = () => {
+    adminEditingDirectoryId = null;
+    adminReferralDirectoryStatusMessage = '';
+    renderReferralDirectoryManager(state);
+  };
+
+  form.onsubmit = (event) => {
+    event.preventDefault();
+    const previousEntry = adminEditingDirectoryId
+      ? (state.referralDirectory || []).find((entry) => entry.id === adminEditingDirectoryId)
+      : null;
+    const previousCode = previousEntry?.code || '';
+    const result = upsertDirectoryEntry(state, orgInput.value, codeInput.value, adminEditingDirectoryId);
+    if (!result.ok) {
+      adminReferralDirectoryStatusMessage = result.message;
+      renderReferralDirectoryManager(state);
+      return;
+    }
+
+    if (adminEditingDirectoryId) {
+      state.organizations.forEach((org) => {
+        if (org.referralCode === previousCode) {
+          org.referralCode = result.entry.code;
+        }
+      });
+      adminReferralDirectoryStatusMessage = `Updated ${result.entry.name} (${result.entry.code}).`;
+    } else {
+      adminReferralDirectoryStatusMessage = `Added ${result.entry.name} (${result.entry.code}).`;
+    }
+
+    adminEditingDirectoryId = null;
+    saveState(state);
+    renderAdmin(state);
+  };
+
+  assignPendingButton.onclick = () => {
+    const orgId = Number(pendingOrgSelect.value || 0);
+    const organization = state.organizations.find((org) => org.id === orgId && org.verificationStatus === 'pending');
+    if (!organization) {
+      adminReferralDirectoryStatusMessage = 'Select a pending organization first.';
+      renderReferralDirectoryManager(state);
+      return;
+    }
+
+    const match = findDirectoryMatch(state.referralDirectory, pendingCodeInput.value || '');
+    if (!match) {
+      adminReferralDirectoryStatusMessage = 'Choose a valid referral directory entry for assignment.';
+      renderReferralDirectoryManager(state);
+      return;
+    }
+
+    organization.referralCode = match.code;
+    syncOrganizationCodeToDirectory(state, organization);
+    adminReferralDirectoryStatusMessage = `Assigned ${match.code} to ${organization.name}.`;
+    saveState(state);
+    renderAdmin(state);
+  };
+
+  list.querySelectorAll('button[data-dir-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const entryId = Number(button.dataset.dirId);
+      const entry = (state.referralDirectory || []).find((item) => item.id === entryId);
+      if (!entry) return;
+
+      if (button.dataset.dirAction === 'edit') {
+        adminEditingDirectoryId = entryId;
+        orgInput.value = entry.name;
+        codeInput.value = entry.code;
+        adminReferralDirectoryStatusMessage = `Editing ${entry.name}.`;
+        renderReferralDirectoryManager(state);
+        return;
+      }
+
+      const linkedOrgs = state.organizations.filter((org) => org.referralCode === entry.code);
+      let confirmMessage = `Delete referral entry ${entry.name} (${entry.code})?`;
+      if (linkedOrgs.length) {
+        confirmMessage += ` ${linkedOrgs.length} organization(s) currently use this code and will be set to Unassigned.`;
+      }
+      const proceed = window.confirm(confirmMessage);
+      if (!proceed) return;
+
+      state.referralDirectory = state.referralDirectory.filter((item) => item.id !== entryId);
+      linkedOrgs.forEach((org) => {
+        org.referralCode = '';
+      });
+      adminEditingDirectoryId = null;
+      adminReferralDirectoryStatusMessage = `Deleted ${entry.name} (${entry.code}).`;
+      saveState(state);
+      renderAdmin(state);
+    });
+  });
+}
+
 function renderAdminReferralsPanel(state) {
   const toolbar = document.getElementById('adminReferralsToolbar');
   const body = document.getElementById('adminReferralBody');
+  const datalist = document.getElementById('referralDirectoryOptions');
   if (!toolbar || !body) return;
+
+  if (datalist) {
+    const options = [...(state.referralDirectory || [])].sort((a, b) => a.name.localeCompare(b.name));
+    datalist.innerHTML = options
+      .map((entry) => `<option value="${entry.name} | ${entry.code}"></option>`)
+      .join('');
+  }
 
   const allCount = state.organizations.length;
   const pendingCount = state.organizations.filter((org) => org.verificationStatus !== 'approved').length;
@@ -1093,7 +1593,7 @@ function renderAdminReferralsPanel(state) {
     <tr>
       <td><input type="checkbox" class="ref-select" data-org-id="${org.id}" /></td>
       <td>${new Date(org.createdAt || Date.now()).toLocaleString()}</td>
-      <td>${org.referralCode || '-'}</td>
+      <td>${org.referralCode || 'Unassigned'}</td>
       <td>${org.name}</td>
       <td>${org.email || '-'}</td>
       <td>${profile.contactPerson || '-'}</td>
@@ -1109,6 +1609,10 @@ function renderAdminReferralsPanel(state) {
       <td><span class="referral-status-pill ${status}">${status}</span></td>
       <td>
         <div class="admin-action-stack">
+          <label class="assign-code-wrap">
+            <input type="search" class="referral-assign-input" data-org-id="${org.id}" list="referralDirectoryOptions" placeholder="Search org/code" value="${org.referralCode || ''}" />
+          </label>
+          <button type="button" class="button ghost small" data-action="assign-code" data-org-id="${org.id}">Assign code</button>
           <button type="button" class="button ghost small" data-action="${status === 'approved' ? 'revert' : 'approve'}" data-org-id="${org.id}">${status === 'approved' ? 'Set pending' : 'Approve'}</button>
           <button type="button" class="button ghost small" data-action="decline" data-org-id="${org.id}">Decline</button>
           <button type="button" class="button ghost small" data-action="reset-password" data-org-id="${org.id}">Reset password</button>
@@ -1129,11 +1633,24 @@ function renderAdminReferralsPanel(state) {
   });
 
   body.querySelectorAll('button[data-action]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const orgId = Number(button.dataset.orgId);
       const organization = state.organizations.find((item) => item.id === orgId);
       if (!organization) return;
-      if (button.dataset.action === 'approve') {
+      if (button.dataset.action === 'assign-code') {
+        const assignInput = body.querySelector(`.referral-assign-input[data-org-id="${orgId}"]`);
+        const entry = findDirectoryMatch(state.referralDirectory, assignInput?.value || '');
+        if (!entry) {
+          window.alert('Select a valid referral directory entry from the dropdown, or type an existing code.');
+          return;
+        }
+        organization.referralCode = entry.code;
+        syncOrganizationCodeToDirectory(state, organization);
+      } else if (button.dataset.action === 'approve') {
+        if (!organization.referralCode) {
+          window.alert('Assign a referral code before approving this application.');
+          return;
+        }
         organization.verificationStatus = 'approved';
         organization.valid = true;
         organization.compliant = true;
@@ -1154,6 +1671,13 @@ function renderAdminReferralsPanel(state) {
         organization.valid = false;
         organization.compliant = false;
         organization.rejectionReason = reason;
+        if (organization.email) {
+          try {
+            await sendDenialEmail(organization.email, organization.name, reason);
+          } catch (_error) {
+            // Keep rejection flow working even when email service is not configured.
+          }
+        }
       } else if (button.dataset.action === 'reset-password') {
         openAdminPasswordResetModal(state, orgId);
         return;
@@ -1264,6 +1788,66 @@ function showRegisterSubmittedModal() {
   };
 }
 
+function closeTermsModal() {
+  const modal = document.getElementById('termsModal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+}
+
+function openTermsModal() {
+  const modal = document.getElementById('termsModal');
+  if (!modal) return;
+  const consent = document.getElementById('termsAcceptCheckbox');
+  const status = document.getElementById('termsStatus');
+  if (consent) {
+    consent.checked = false;
+  }
+  if (status) {
+    status.textContent = '';
+  }
+  modal.classList.remove('hidden');
+}
+
+function closeEmailVerificationModal() {
+  const modal = document.getElementById('emailVerificationModal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+}
+
+function openEmailVerificationModal(email) {
+  const modal = document.getElementById('emailVerificationModal');
+  const target = document.getElementById('emailVerificationTarget');
+  const status = document.getElementById('emailVerificationStatus');
+  const input = document.getElementById('emailVerificationCodeInput');
+  if (!modal || !target || !status || !input) return;
+
+  target.textContent = `A verification code has been sent to ${email}.`;
+  status.textContent = '';
+  input.value = '';
+  modal.classList.remove('hidden');
+}
+
+async function completeRegistrationAfterTerms(state, message) {
+  if (!pendingRegistrationDraft) return;
+
+  try {
+    await pushRegistrationToServer(pendingRegistrationDraft.newOrg, pendingRegistrationDraft.newUser);
+  } catch (error) {
+    message.textContent = `Registration could not be saved to the shared server: ${error.message}`;
+    return;
+  }
+
+  state.users.push(pendingRegistrationDraft.newUser);
+  state.organizations.push(pendingRegistrationDraft.newOrg);
+  state.currentUserId = null;
+  saveState(state);
+  pendingRegistrationDraft = null;
+  closeTermsModal();
+  closeEmailVerificationModal();
+  message.textContent = 'Registration submitted for verification.';
+  showRegisterSubmittedModal();
+}
+
 async function handleRegister(state, event) {
   event.preventDefault();
   const orgName = document.getElementById('registerName').value.trim();
@@ -1300,14 +1884,19 @@ async function handleRegister(state, event) {
     return;
   }
 
+  const emailExists = state.users.some((user) => user.email.toLowerCase() === email.toLowerCase());
+  if (emailExists) {
+    message.textContent = 'This email is already registered.';
+    return;
+  }
+
   if (!shopeePayScreenshotFile) {
     message.textContent = 'Please upload the required ShopeePay screenshot for verification.';
     return;
   }
 
-  const emailUseCount = state.users.filter((user) => user.email.toLowerCase() === email.toLowerCase()).length;
-  if (emailUseCount >= 2) {
-    message.textContent = 'This organization email has reached the maximum allowed usage (2).';
+  if (shopeePayScreenshotFile.size > 1_500_000) {
+    message.textContent = 'Please upload a screenshot that is 1.5 MB or smaller.';
     return;
   }
 
@@ -1352,7 +1941,7 @@ async function handleRegister(state, event) {
     compliant: false,
     verificationStatus: 'pending',
     inquiries: [],
-    referralCode: generateUniqueReferralCode(state, normalizedAcronym || orgName),
+    referralCode: '',
     trend: buildTrend(0),
     referrals: [],
     profile: {
@@ -1365,12 +1954,9 @@ async function handleRegister(state, event) {
     }
   };
 
-  state.users.push(newUser);
-  state.organizations.push(newOrg);
-  state.currentUserId = null;
-  saveState(state);
-  message.textContent = 'Registration submitted for verification.';
-  showRegisterSubmittedModal();
+  pendingRegistrationDraft = { newUser, newOrg };
+  message.textContent = 'Please review and accept the Terms and Conditions to continue.';
+  openTermsModal();
 }
 
 function handlePasswordHelp(state, event) {
@@ -1483,8 +2069,8 @@ function handlePurgePlaceholderOrganizations(state) {
   window.alert(`Deleted ${placeholderOrgs.length} placeholder organization(s).`);
 }
 
-function attachPageHandlers() {
-  const state = loadState();
+async function attachPageHandlers() {
+  const state = await loadStateFromServer();
   setAuthLink(state);
   renderCampaignCountdown();
 
@@ -1541,6 +2127,133 @@ function attachPageHandlers() {
   document.getElementById('registerForm')?.addEventListener('submit', async (event) => {
     await handleRegister(state, event);
   });
+
+  document.getElementById('termsCancelBtn')?.addEventListener('click', () => {
+    closeTermsModal();
+  });
+
+  document.getElementById('termsModal')?.addEventListener('click', (event) => {
+    if (event.target?.id === 'termsModal') {
+      closeTermsModal();
+    }
+  });
+
+  document.getElementById('termsSubmitBtn')?.addEventListener('click', async () => {
+    const consent = document.getElementById('termsAcceptCheckbox');
+    const message = document.getElementById('authMessage');
+    const termsStatus = document.getElementById('termsStatus');
+    const submitButton = document.getElementById('termsSubmitBtn');
+    if (!message) return;
+
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = 'Sending...';
+    }
+
+    if (!pendingRegistrationDraft) {
+      if (termsStatus) {
+        termsStatus.textContent = 'Registration details were not found. Please submit the form again.';
+      }
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Accept and Submit Registration';
+      }
+      return;
+    }
+    if (!consent?.checked) {
+      if (termsStatus) {
+        termsStatus.textContent = 'Please accept the Terms and Conditions before submitting your registration.';
+      }
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Accept and Submit Registration';
+      }
+      return;
+    }
+
+    const email = pendingRegistrationDraft?.newUser?.email || '';
+    if (!email) {
+      if (termsStatus) {
+        termsStatus.textContent = 'Registration email is missing. Please submit the form again.';
+      }
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Accept and Submit Registration';
+      }
+      return;
+    }
+
+    if (termsStatus) {
+      termsStatus.textContent = 'Sending verification code to your email...';
+    }
+    try {
+      await requestEmailCode(email);
+      closeTermsModal();
+      openEmailVerificationModal(email);
+      message.textContent = 'Verification code sent. Enter the code in the verification box to finish registration.';
+    } catch (error) {
+      if (termsStatus) {
+        termsStatus.textContent = `Could not send verification code: ${error.message}`;
+      }
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Accept and Submit Registration';
+      }
+    }
+  });
+
+  document.getElementById('emailVerificationCancelBtn')?.addEventListener('click', () => {
+    closeEmailVerificationModal();
+  });
+
+  document.getElementById('emailVerificationModal')?.addEventListener('click', (event) => {
+    if (event.target?.id === 'emailVerificationModal') {
+      closeEmailVerificationModal();
+    }
+  });
+
+  document.getElementById('emailVerificationResendBtn')?.addEventListener('click', async () => {
+    const status = document.getElementById('emailVerificationStatus');
+    const email = pendingRegistrationDraft?.newUser?.email || '';
+    if (!status || !email) return;
+    status.textContent = 'Resending code...';
+    try {
+      await requestEmailCode(email);
+      status.textContent = 'A new verification code was sent.';
+    } catch (error) {
+      status.textContent = `Could not resend code: ${error.message}`;
+    }
+  });
+
+  document.getElementById('emailVerificationForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const status = document.getElementById('emailVerificationStatus');
+    const message = document.getElementById('authMessage');
+    const email = pendingRegistrationDraft?.newUser?.email || '';
+    const code = document.getElementById('emailVerificationCodeInput')?.value.trim() || '';
+    if (!status || !message || !email) return;
+
+    if (!/^\d{6}$/.test(code)) {
+      status.textContent = 'Enter a valid 6-digit verification code.';
+      return;
+    }
+
+    status.textContent = 'Verifying code...';
+    try {
+      const verification = await verifyEmailCode(email, code);
+      if (!verification.verified) {
+        status.textContent = verification.message || 'Verification failed. Please try again.';
+        return;
+      }
+      status.textContent = 'Email verified. Completing registration...';
+      await completeRegistrationAfterTerms(state, message);
+    } catch (error) {
+      status.textContent = `Verification error: ${error.message}`;
+    }
+  });
 }
 
-document.addEventListener('DOMContentLoaded', attachPageHandlers);
+document.addEventListener('DOMContentLoaded', () => {
+  attachPageHandlers();
+});

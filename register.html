@@ -22,7 +22,7 @@
 
     <main class="auth-shell">
       <div class="auth-card">
-        <p class="eyebrow">Join now</p>
+        <p class="eyebrow join-now-callout">Join Now</p>
         <h1>Register your student organization</h1>
         <ol class="reminder-list compact register-instruction-list">
           <li>Organization contact persons must clearly indicate their intent to participate in the ACC referral program through email.</li>
@@ -68,16 +68,16 @@
             University
             <select id="registerUniversity" required>
               <option value="" selected>Select university</option>
-              <option value="Ateneo de Manila University">Ateneo de Manila University</option>
-              <option value="University of the Philippines">University of the Philippines</option>
-              <option value="De La Salle University">De La Salle University</option>
-              <option value="University of Santo Tomas">University of Santo Tomas</option>
-              <option value="Mapúa University">Mapúa University</option>
-              <option value="Far Eastern University">Far Eastern University</option>
-              <option value="University of the East">University of the East</option>
               <option value="Adamson University">Adamson University</option>
-              <option value="National University">National University</option>
+              <option value="Ateneo de Manila University">Ateneo de Manila University</option>
               <option value="Centro Escolar University">Centro Escolar University</option>
+              <option value="De La Salle University">De La Salle University</option>
+              <option value="Far Eastern University">Far Eastern University</option>
+              <option value="Mapúa University">Mapúa University</option>
+              <option value="National University">National University</option>
+              <option value="University of Santo Tomas">University of Santo Tomas</option>
+              <option value="University of the East">University of the East</option>
+              <option value="University of the Philippines">University of the Philippines</option>
               <option value="Other">Other</option>
             </select>
           </label>
@@ -90,7 +90,7 @@
             Confirm password
             <input type="password" id="registerConfirm" required placeholder="Repeat password" />
           </label>
-          <button class="button primary full" type="submit">Register</button>
+          <button class="button primary full" type="submit">Review Terms and Register</button>
         </form>
         <p id="authMessage" class="form-message"></p>
         <p class="helper-text">
@@ -106,6 +106,122 @@
         <div class="button-group-inline" style="margin-top: 12px;">
           <button id="registerSubmittedGoLogin" type="button" class="button primary">Go to login</button>
         </div>
+      </div>
+    </div>
+
+    <div id="termsModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="termsModalTitle">
+      <div class="modal-card terms-modal-card">
+        <h2 id="termsModalTitle">Terms and Conditions</h2>
+        <div class="terms-scroll-box">
+          <h2>SHOPEE CAMPUS CHALLENGE 2026</h2>
+          <h3>Official Terms and Conditions</h3>
+          <p><strong>DTI-FTEB Permit No. ________, Series of 2026</strong></p>
+
+          <h3>1. Campaign Period and Eligibility</h3>
+          <ul>
+            <li><strong>Campaign Period:</strong> August 3, 2026 (12:00 AM) to October 3, 2026 (11:59 PM). Note: Pre-registration submissions from July 27, 2026 will be processed, but validation and referral tracking officially commence on August 3, 2026.</li>
+            <li><strong>Eligibility:</strong> Open to legitimate, school-recognized student organizations in the Philippines.</li>
+            <li><strong>Requirements:</strong> Participating organizations must register via the official website, use one (1) official organization email address, and designate one (1) official Organization Contact Person who maintains an active Shopee account and a fully verified ShopeePay account.</li>
+            <li><strong>Exclusions:</strong> Student organizations whose current officers, executive committee members, or official representatives are employees, interns, or contractors of Shopee Philippines, its affiliate companies, or its advertising agencies, including their immediate family members, are disqualified from participating.</li>
+          </ul>
+
+          <h3>2. Campaign Mechanics and Validation</h3>
+          <ul>
+            <li><strong>Step 1: Register:</strong> Submit complete organization details and contact person info via the official landing page.</li>
+            <li><strong>Step 2: Verify:</strong> Await administrative approval. Organizations with a Pending or Rejected status will not accumulate Qualified Referrals.</li>
+            <li><strong>Step 3: Promote:</strong> Use the assigned unique referral code and official marketing kits to promote the Shopee After Class Club.</li>
+            <li><strong>Qualified Referral:</strong> Refers strictly to a successful Shopee After Class Club registration that passes validation and campaign compliance checks.</li>
+          </ul>
+
+          <h3>3. Rewards Structure</h3>
+          <p>Organizations must reach a minimum of fifty (50) Qualified Referrals to unlock milestones:</p>
+          <div class="terms-table-wrap">
+            <table class="terms-table">
+              <thead>
+                <tr>
+                  <th>Milestone or Tier</th>
+                  <th>Minimum Referrals</th>
+                  <th>Reward or Incentives</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Base Referral Reward</td>
+                  <td>50</td>
+                  <td>50 pesos per validated referral</td>
+                </tr>
+                <tr>
+                  <td>Gold Tier Award</td>
+                  <td>100</td>
+                  <td>4,500 pesos cash</td>
+                </tr>
+                <tr>
+                  <td>Diamond Tier Award</td>
+                  <td>200 to 300</td>
+                  <td>8,500 pesos cash</td>
+                </tr>
+                <tr>
+                  <td>Grand Champion Award</td>
+                  <td>Rank 1 on Final Leaderboard</td>
+                  <td>20,000 pesos cash and exclusive networking session with Shopee</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>4. Reward Fulfillment</h3>
+          <ul>
+            <li><strong>ShopeePay Credits:</strong> Referral rewards will be processed monthly. Disbursal to the registered Contact Person's verified ShopeePay account will be completed within thirty (30) calendar days following the end of each monthly validation cycle, subject to ShopeePay's standard limits and terms.</li>
+            <li><strong>Physical Rewards and Networking:</strong> Merchandise kits and the Grand Champion networking session schedules will be coordinated directly with winning organizations. Fulfillment may take up to sixty (60) calendar days following the final campaign audit.</li>
+          </ul>
+
+          <h3>5. Disqualification and Audit</h3>
+          <ul>
+            <li>Shopee reserves the right to audit records and disqualify any organization found engaging in fraud, duplicate registrations, click-farming, or referral manipulation. Disqualified parties forfeit all accumulated rewards. Shopee's determination regarding referral validity and campaign compliance shall be final.</li>
+            <li>Account security and login credentials are the sole operational responsibility of the designated Organization Contact Person.</li>
+          </ul>
+
+          <h3>6. Data Privacy and Legal</h3>
+          <ul>
+            <li><strong>Data Privacy:</strong> Personal data collected will be processed strictly for campaign administration and reward fulfillment in compliance with Republic Act No. 10173 (Data Privacy Act of 2012) and Shopee's Privacy Policy.</li>
+            <li><strong>Amendments:</strong> Shopee reserves the right to amend these Terms and Conditions in accordance with applicable laws and regulatory requirements, with prior approval of the DTI-FTEB where applicable.</li>
+          </ul>
+
+          <h3>7. Organizer's Decision</h3>
+          <ul>
+            <li>Shopee reserves the sole and absolute discretion to determine participant eligibility, referral validity, milestone qualification, and the final interpretation of these Terms and Conditions. All decisions made by Shopee shall be final and binding.</li>
+          </ul>
+
+          <p><strong>By participating in the Shopee Campus Challenge 2026, the organization fully accepts these Terms and Conditions. For inquiries, please contact the official system administrator through the platform dashboard.</strong></p>
+        </div>
+        <label class="terms-consent-check">
+          <input type="checkbox" id="termsAcceptCheckbox" />
+          I have read and accept the Terms and Conditions.
+        </label>
+        <div class="button-group-inline" style="margin-top: 12px;">
+          <button id="termsCancelBtn" type="button" class="button secondary">Back to form</button>
+          <button id="termsSubmitBtn" type="button" class="button primary">Accept and Submit Registration</button>
+        </div>
+        <p id="termsStatus" class="form-message"></p>
+      </div>
+    </div>
+
+    <div id="emailVerificationModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="emailVerificationTitle">
+      <div class="modal-card compact-modal">
+        <h2 id="emailVerificationTitle">Verify your organization email</h2>
+        <p id="emailVerificationTarget" class="muted">A verification code has been sent to your email.</p>
+        <form id="emailVerificationForm" class="auth-form compact">
+          <label>
+            Email verification code
+            <input type="text" id="emailVerificationCodeInput" required maxlength="6" pattern="^\d{6}$" placeholder="Enter 6-digit code" />
+          </label>
+          <div class="button-group-inline">
+            <button type="submit" class="button primary">Verify and submit registration</button>
+            <button id="emailVerificationResendBtn" type="button" class="button secondary">Resend code</button>
+            <button id="emailVerificationCancelBtn" type="button" class="button ghost">Cancel</button>
+          </div>
+        </form>
+        <p id="emailVerificationStatus" class="form-message"></p>
       </div>
     </div>
 
