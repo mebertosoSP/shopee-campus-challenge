@@ -1,4 +1,4 @@
-const { getStore } = require('@netlify/blobs');
+const { connectLambda, getStore } = require('@netlify/blobs');
 
 function json(statusCode, body) {
   return {
@@ -16,6 +16,8 @@ function isValidEmail(email) {
 
 exports.handler = async (event) => {
   try {
+    connectLambda(event);
+
     if (event.httpMethod !== 'POST') {
       return json(405, { message: 'Method not allowed.' });
     }
