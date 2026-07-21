@@ -25,7 +25,7 @@
         <p class="eyebrow join-now-callout">Join Now</p>
         <h1>Register your student organization</h1>
         <ol class="reminder-list compact register-instruction-list">
-          <li>Organization contact persons must clearly indicate their intent to participate in the ACC referral program through email.</li>
+          <li>Email your intent to register in the ACC referral program first, then proceed with this form.</li>
           <li>Only one contact person and one organization email are allowed per organization; non-compliance may invalidate referrals associated with excess entries.</li>
           <li>The designated contact person must have a verified ShopeePay account and active Shopee username for verification. To confirm ShopeePay, open the ShopeePay section of the app, tap Me, and submit a screenshot of that screen.</li>
         </ol>
@@ -36,12 +36,13 @@
           </label>
           <label>
             Organization acronym
-            <input type="text" id="registerAcronym" required maxlength="6" pattern="^[A-Za-z0-9]{1,6}$" placeholder="Up to 6 letters/numbers only" />
-            <small class="helper-text">Do not include spaces or parentheses.</small>
+            <input type="text" id="registerAcronym" required maxlength="12" pattern="^[A-Za-z]{1,12}$" placeholder="Up to 12 letters only" />
+            <small class="helper-text">Use letters only, up to 12 characters.</small>
           </label>
           <label>
             Organization email
             <input type="email" id="registerEmail" required placeholder="org@university.edu" />
+            <small class="helper-text">Use the official organization email only.</small>
           </label>
           <label>
             Contact person
@@ -53,7 +54,8 @@
           </label>
           <label>
             Contact number
-            <input type="tel" id="registerContactNumber" required placeholder="e.g., 09171234567" />
+            <input type="tel" id="registerContactNumber" required pattern="^09\d{9}$" placeholder="e.g., 09171234567" />
+            <small class="helper-text">Format: 09171234567.</small>
           </label>
           <label>
             Shopee username
@@ -101,8 +103,8 @@
 
     <div id="registerSubmittedModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="registerSubmittedTitle">
       <div class="modal-card compact-modal">
-        <h2 id="registerSubmittedTitle">Profile submitted for verification</h2>
-        <p class="muted">Your organization profile has been submitted. Please return at 12:00 PM tomorrow, then enter your password to log in.</p>
+        <h2 id="registerSubmittedTitle">Registration complete</h2>
+        <p class="muted">Your email is verified and your account is now active. You can sign in immediately and wait for your referral code assignment in the dashboard.</p>
         <div class="button-group-inline" style="margin-top: 12px;">
           <button id="registerSubmittedGoLogin" type="button" class="button primary">Go to login</button>
         </div>
@@ -127,8 +129,8 @@
 
           <h3>2. Campaign Mechanics and Validation</h3>
           <ul>
-            <li><strong>Step 1: Register:</strong> Submit complete organization details and contact person info via the official landing page.</li>
-            <li><strong>Step 2: Verify:</strong> Await administrative approval. Organizations with a Pending or Rejected status will not accumulate Qualified Referrals.</li>
+            <li><strong>Step 1: Register:</strong> Send your intent to register by email, then submit complete organization details and contact person info via the official landing page.</li>
+            <li><strong>Step 2: Verify:</strong> The contact person will receive a six-digit verification code by email. Entering the correct code completes account activation.</li>
             <li><strong>Step 3: Promote:</strong> Use the assigned unique referral code and official marketing kits to promote the Shopee After Class Club.</li>
             <li><strong>Qualified Referral:</strong> Refers strictly to a successful Shopee After Class Club registration that passes validation and campaign compliance checks.</li>
           </ul>

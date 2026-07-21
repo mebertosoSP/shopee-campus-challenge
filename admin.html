@@ -23,8 +23,8 @@
     <main class="container page-shell">
       <section class="page-title">
         <p class="eyebrow">Admin controls</p>
-        <h1>Verification and reporting hub</h1>
-        <p class="muted">Review organizations, monitor referral counts, and read inquiries submitted by campus groups.</p>
+        <h1>Code assignment and reporting hub</h1>
+        <p class="muted">Review organizations, assign referral codes, monitor referral counts, and read inquiries submitted by campus groups.</p>
       </section>
 
       <section class="stats-grid">
@@ -37,7 +37,7 @@
           <p id="adminReferralCount" class="stat-value">0</p>
         </article>
         <article class="card stat-card">
-          <h3>Pending review</h3>
+          <h3>Awaiting code assignment</h3>
           <p id="adminPendingCount" class="stat-value">0</p>
         </article>
       </section>
@@ -157,7 +157,7 @@
               <button type="button" class="button ghost small" id="copyAllReferrals">Copy all</button>
             </div>
           </div>
-          <p class="muted">Review pending applications, validate Shopee details, and approve organizations for campaign participation.</p>
+          <p class="muted">Organizations are activated through email verification. Assign referral codes manually so they can start promoting.</p>
           <div id="adminReferralsToolbar" class="admin-toolbar"></div>
           <datalist id="referralDirectoryOptions"></datalist>
           <div class="table-wrap">
@@ -174,7 +174,6 @@
                   <th>Contact Number</th>
                   <th>Shopee Username</th>
                   <th>Verified ShopeePay Screenshot</th>
-                  <th>Decline reason</th>
                   <th>Status</th>
                   <th>Action</th>
                 </tr>

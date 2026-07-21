@@ -25,18 +25,13 @@
         <p class="eyebrow">Referral tracker</p>
         <h1>Welcome back, <span id="userName">Organizer</span></h1>
         <p class="muted">You are tracking referrals for <span id="orgName">your organization</span>.</p>
+        <div id="dashboardNoticeBar" class="dashboard-notice hidden"></div>
         <div id="adminDashboardOrgWrap" class="admin-dashboard-selector" style="display: none;">
           <label>
             View organization
             <select id="adminDashboardOrgSelect"></select>
           </label>
         </div>
-      </section>
-
-      <section id="pendingApprovalScreen" class="card waiting-screen hidden">
-        <p class="eyebrow">Pending approval</p>
-        <h2>Your registration is under review</h2>
-        <p class="muted">Please wait for the admin to approve your organization before tracking referrals.</p>
       </section>
 
       <section class="stat-row" id="dashboardStatsRow">
@@ -120,8 +115,8 @@
                   <p id="estimatedPayout" class="weekly-detail-value">Standard campaign allocation</p>
                 </div>
                 <div class="weekly-detail-card">
-                  <p class="weekly-detail-label">Verification Status</p>
-                  <p id="verificationStatus" class="weekly-detail-value">Pending admin review</p>
+                  <p class="weekly-detail-label">Account Status</p>
+                  <p id="verificationStatus" class="weekly-detail-value">Email verified</p>
                 </div>
               </div>
             </div>

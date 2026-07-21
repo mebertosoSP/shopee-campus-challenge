@@ -10,6 +10,7 @@ let adminReferralDirectoryPage = 1;
 let adminEditingDirectoryId = null;
 let adminReferralDirectoryStatusMessage = '';
 let pendingRegistrationDraft = null;
+let adminSyncTimer = null;
 const CAMPAIGN_END_ISO = '2026-10-03T23:59:59';
 const REFERRAL_DIRECTORY_PAGE_SIZE = 8;
 const FUNCTIONS_BASE = '/.netlify/functions';
@@ -290,6 +291,16 @@ async function persistSharedState(state) {
   await callBackend('save-app-state', { state: extractSharedState(state) });
 }
 
+async function saveStateNow(state) {
+  writeSessionUserId(state.currentUserId || null);
+  try {
+    await persistSharedState(state);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
 function queuePersistSharedState(state) {
   if (saveStateTimer) {
     window.clearTimeout(saveStateTimer);
@@ -325,17 +336,18 @@ async function loadStateFromServer() {
 
 function normalizeState(parsed) {
   const organizations = (parsed.organizations || DEFAULT_ORGANIZATIONS).map((org) => {
-    const isApproved = org.verificationStatus
-      ? org.verificationStatus === 'approved'
-      : Boolean(org.valid && org.compliant);
+    const rawStatus = String(org.verificationStatus || '').toLowerCase();
+    const normalizedStatus = rawStatus === 'rejected' ? 'rejected' : 'verified';
+    const isVerified = normalizedStatus === 'verified';
     return {
       ...org,
       acronym: (org.acronym || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6),
       isPlaceholder: typeof org.isPlaceholder === 'boolean' ? org.isPlaceholder : !org.createdAt,
-      verificationStatus: org.verificationStatus || (isApproved ? 'approved' : 'pending'),
+      verificationStatus: normalizedStatus,
       rejectionReason: org.rejectionReason || '',
-      valid: typeof org.valid === 'boolean' ? org.valid : isApproved,
-      compliant: typeof org.compliant === 'boolean' ? org.compliant : isApproved,
+      valid: typeof org.valid === 'boolean' ? org.valid : isVerified,
+      compliant: typeof org.compliant === 'boolean' ? org.compliant : isVerified,
+      notifications: Array.isArray(org.notifications) ? org.notifications : [],
       profile: {
         contactPerson: org.profile?.contactPerson || org.contactPerson || '',
         contactPosition: org.profile?.contactPosition || org.contactPosition || '',
@@ -367,11 +379,6 @@ function normalizeState(parsed) {
     if (org.referralCode) {
       usedCodes.add(org.referralCode);
     }
-    if (org.verificationStatus === 'approved' && !org.referralCode) {
-      org.verificationStatus = 'pending';
-      org.valid = false;
-      org.compliant = false;
-    }
   });
 
   const referralDirectory = normalizeReferralDirectory(parsed.referralDirectory, organizations);
@@ -380,14 +387,37 @@ function normalizeState(parsed) {
     ...parsed,
     organizations,
     referralDirectory,
-    inquiries: (parsed.inquiries || []).map((inquiry) => ({
-      ...inquiry,
-      orgId: inquiry.orgId || organizations.find((org) => org.name === inquiry.orgName || (inquiry.orgLabel || '').startsWith(org.name))?.id || null,
-      createdAt: inquiry.createdAt || new Date().toISOString(),
-      status: inquiry.status === 'resolved' ? 'resolved' : 'pending',
-      response: inquiry.response || '',
-      repliedAt: inquiry.repliedAt || null
-    })),
+    inquiries: (parsed.inquiries || []).map((inquiry) => {
+      const normalizedResponses = Array.isArray(inquiry.responses)
+        ? inquiry.responses
+          .map((responseEntry) => ({
+            id: responseEntry.id || Date.now(),
+            message: String(responseEntry.message || '').trim(),
+            createdAt: responseEntry.createdAt || inquiry.repliedAt || inquiry.createdAt || new Date().toISOString()
+          }))
+          .filter((responseEntry) => Boolean(responseEntry.message))
+        : [];
+
+      if (!normalizedResponses.length && inquiry.response) {
+        normalizedResponses.push({
+          id: Date.now(),
+          message: String(inquiry.response || '').trim(),
+          createdAt: inquiry.repliedAt || inquiry.createdAt || new Date().toISOString()
+        });
+      }
+
+      const latestResponse = normalizedResponses.length ? normalizedResponses[normalizedResponses.length - 1] : null;
+
+      return {
+        ...inquiry,
+        orgId: inquiry.orgId || organizations.find((org) => org.name === inquiry.orgName || (inquiry.orgLabel || '').startsWith(org.name))?.id || null,
+        createdAt: inquiry.createdAt || new Date().toISOString(),
+        status: inquiry.status === 'resolved' ? 'resolved' : 'pending',
+        responses: normalizedResponses,
+        response: latestResponse?.message || '',
+        repliedAt: latestResponse?.createdAt || inquiry.repliedAt || null
+      };
+    }),
     users: (parsed.users || []).map((user) => ({
       ...user,
       role: user.role || 'organization'
@@ -398,6 +428,25 @@ function normalizeState(parsed) {
 function saveState(state) {
   writeSessionUserId(state.currentUserId || null);
   queuePersistSharedState(state);
+}
+
+async function refreshSharedState(state) {
+  try {
+    const result = await callBackend('get-app-state', {});
+    if (!result?.state) return false;
+    const normalized = normalizeState({
+      ...result.state,
+      currentUserId: state.currentUserId
+    });
+
+    state.users = normalized.users;
+    state.organizations = normalized.organizations;
+    state.inquiries = normalized.inquiries;
+    state.referralDirectory = normalized.referralDirectory;
+    return true;
+  } catch (_error) {
+    return false;
+  }
 }
 
 function getCurrentUser(state) {
@@ -506,8 +555,11 @@ function setAuthLink(state) {
 
 function requireAuth(state) {
   if (!getCurrentUser(state)) {
-    window.location.href = 'login.html';
+    window.location.replace('login.html');
+    return false;
   }
+  document.body.classList.add('auth-ready');
+  return true;
 }
 
 function getAwardData(org, rank) {
@@ -752,10 +804,10 @@ function setDashboardMetricAccent(organization) {
 
   if (organization.verificationStatus === 'rejected') {
     verification.classList.add('metric-value-danger');
-  } else if (organization.verificationStatus === 'approved') {
-    verification.classList.add('metric-value-success');
+  } else if (!organization.referralCode) {
+    verification.classList.add('metric-value-warn');
   } else {
-    verification.classList.add('metric-value-info');
+    verification.classList.add('metric-value-success');
   }
 
   if (organization.qualifiedReferrals < 50) {
@@ -806,15 +858,27 @@ function renderInquiryThread(state, organizationId) {
 
   thread.innerHTML = entries.map((inquiry) => {
     const asked = new Date(inquiry.createdAt || Date.now()).toLocaleString();
-    const replied = inquiry.repliedAt ? new Date(inquiry.repliedAt).toLocaleString() : '';
     const statusLabel = inquiry.status === 'resolved' ? 'Resolved' : 'Pending';
+    const responseHistory = Array.isArray(inquiry.responses)
+      ? inquiry.responses
+      : (inquiry.response
+        ? [{ message: inquiry.response, createdAt: inquiry.repliedAt || inquiry.createdAt || new Date().toISOString() }]
+        : []);
+
+    const responseMarkup = responseHistory.length
+      ? responseHistory.map((responseEntry) => `
+          <div class="thread-reply">
+            <p><strong>Admin response:</strong> ${responseEntry.message}</p>
+            <p class="thread-meta">Replied ${new Date(responseEntry.createdAt || Date.now()).toLocaleString()}</p>
+          </div>
+        `).join('')
+      : '<p class="thread-meta">Awaiting admin response.</p>';
+
     return `
       <div class="thread-item">
         <p><strong>Your inquiry:</strong> ${inquiry.message}</p>
         <p class="thread-meta">Status: ${statusLabel} · Sent ${asked}</p>
-        ${inquiry.response
-          ? `<div class="thread-reply"><p><strong>Admin response:</strong> ${inquiry.response}</p><p class="thread-meta">Replied ${replied}</p></div>`
-          : '<p class="thread-meta">Awaiting admin response.</p>'}
+        ${responseMarkup}
       </div>
     `;
   }).join('');
@@ -827,9 +891,7 @@ function renderDashboard(state) {
   const organization = getDashboardOrganization(state, currentUser);
   const adminWrap = document.getElementById('adminDashboardOrgWrap');
   const adminSelect = document.getElementById('adminDashboardOrgSelect');
-  const pendingScreen = document.getElementById('pendingApprovalScreen');
-  const dashboardStatsRow = document.getElementById('dashboardStatsRow');
-  const dashboardContentStack = document.getElementById('dashboardContentStack');
+  const noticeBar = document.getElementById('dashboardNoticeBar');
   const rank = state.organizations.slice().sort((a, b) => b.qualifiedReferrals - a.qualifiedReferrals).findIndex((org) => org.id === organization.id) + 1;
   const award = getAwardData(organization, rank);
 
@@ -841,7 +903,7 @@ function renderDashboard(state) {
   if (currentUser.role === 'admin' && adminWrap && adminSelect) {
     adminWrap.style.display = 'inline-block';
     adminSelect.innerHTML = state.organizations
-      .map((org) => `<option value="${org.id}">${org.name} (${org.verificationStatus || 'pending'})</option>`)
+      .map((org) => `<option value="${org.id}">${org.name} (${org.referralCode ? 'code assigned' : 'awaiting code'})</option>`)
       .join('');
     adminSelect.value = String(organization.id);
     adminSelect.onchange = () => {
@@ -850,31 +912,6 @@ function renderDashboard(state) {
     };
   } else if (adminWrap) {
     adminWrap.style.display = 'none';
-  }
-
-  const isPendingOrganization = currentUser.role !== 'admin' && organization.verificationStatus !== 'approved';
-  if (pendingScreen && dashboardStatsRow && dashboardContentStack) {
-    pendingScreen.classList.toggle('hidden', !isPendingOrganization);
-    dashboardStatsRow.classList.toggle('hidden', isPendingOrganization);
-    dashboardContentStack.classList.toggle('waiting-mode', isPendingOrganization);
-  }
-
-  if (isPendingOrganization) {
-    renderDashboardProfileTable(state, organization);
-    renderInquiryThread(state, organization.id);
-    document.getElementById('overallReferrals').textContent = 'Pending';
-    document.getElementById('tierValue').textContent = 'Pending approval';
-    document.getElementById('weeklyReferrals').textContent = 'Pending';
-    document.getElementById('nextTierValue').textContent = 'Waiting for admin approval';
-    document.getElementById('estimatedPayout').textContent = 'Waiting for admin approval';
-    document.getElementById('verificationStatus').textContent = 'Pending admin approval';
-    document.getElementById('overallProgressLabel').textContent = 'Pending approval';
-    document.getElementById('progressTierNote').textContent = 'Your organization is waiting for admin verification.';
-    document.getElementById('progressFill').style.width = '0%';
-    document.getElementById('progressFill').className = 'level-nonqual';
-    document.getElementById('orgReferralCode').textContent = organization.referralCode || 'Unassigned';
-    setDashboardMetricAccent(organization);
-    return;
   }
 
   document.getElementById('overallReferrals').textContent = organization.qualifiedReferrals;
@@ -889,11 +926,11 @@ function renderDashboard(state) {
         : 'Base threshold at 50 validated referrals';
   document.getElementById('nextTierValue').textContent = nextTier;
   document.getElementById('estimatedPayout').textContent = getReferralPayoutText(organization.qualifiedReferrals);
-  document.getElementById('verificationStatus').textContent = organization.verificationStatus === 'approved'
-    ? 'Verified and eligible'
-    : organization.verificationStatus === 'rejected'
-      ? `Rejected: ${organization.rejectionReason || 'Please contact admin.'}`
-      : 'Pending admin verification';
+  document.getElementById('verificationStatus').textContent = organization.verificationStatus === 'rejected'
+    ? `Verification issue: ${organization.rejectionReason || 'Please contact admin.'}`
+    : organization.referralCode
+      ? 'Email verified and referral code assigned'
+      : 'Email verified. Referral code assignment is in progress';
   const progressMeta = getProgressTier(organization.qualifiedReferrals);
   const progressFill = document.getElementById('progressFill');
   progressFill.style.width = `${Math.min(100, Math.round((organization.qualifiedReferrals / 250) * 100))}%`;
@@ -911,7 +948,23 @@ function renderDashboard(state) {
     `;
   }
 
-  document.getElementById('orgReferralCode').textContent = organization.referralCode || 'Unassigned';
+  const referralCodeNode = document.getElementById('orgReferralCode');
+  if (referralCodeNode) {
+    referralCodeNode.textContent = organization.referralCode || 'Your email is verified. Please wait while the admin team assigns your referral code.';
+    referralCodeNode.classList.toggle('referral-code-pending-copy', !organization.referralCode);
+  }
+
+  if (noticeBar) {
+    const latestNotice = Array.isArray(organization.notifications) ? organization.notifications[0] : null;
+    if (latestNotice?.message) {
+      noticeBar.classList.remove('hidden');
+      noticeBar.textContent = latestNotice.message;
+    } else {
+      noticeBar.classList.add('hidden');
+      noticeBar.textContent = '';
+    }
+  }
+
   setDashboardMetricAccent(organization);
   renderDashboardProfileTable(state, organization);
   renderInquiryThread(state, organization.id);
@@ -1024,7 +1077,7 @@ function renderAdmin(state) {
   state.referralDirectory = normalizeReferralDirectory(state.referralDirectory, state.organizations);
   document.getElementById('adminOrgCount').textContent = state.organizations.length;
   document.getElementById('adminReferralCount').textContent = state.organizations.reduce((sum, org) => sum + org.qualifiedReferrals, 0);
-  document.getElementById('adminPendingCount').textContent = state.organizations.filter((org) => org.verificationStatus !== 'approved').length;
+  document.getElementById('adminPendingCount').textContent = state.organizations.filter((org) => !org.referralCode).length;
 
   const monthlyStats = document.getElementById('monthlyStats');
   if (monthlyStats) {
@@ -1168,8 +1221,17 @@ function renderAdmin(state) {
           }
           const targetInquiry = state.inquiries.find((item) => item.id === inquiryId);
           if (!targetInquiry) return;
+          if (!Array.isArray(targetInquiry.responses)) {
+            targetInquiry.responses = [];
+          }
+          const repliedAt = new Date().toISOString();
+          targetInquiry.responses.push({
+            id: Date.now(),
+            message: response,
+            createdAt: repliedAt
+          });
           targetInquiry.response = response;
-          targetInquiry.repliedAt = new Date().toISOString();
+          targetInquiry.repliedAt = repliedAt;
           saveState(state);
           renderAdmin(state);
         });
@@ -1306,10 +1368,10 @@ function getSelectedOrganization(state) {
 function getFilteredReferrals(state) {
   const all = [...state.organizations].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
   if (adminReferralFilter === 'all') return all;
-  if (adminReferralFilter === 'approved') {
-    return all.filter((org) => org.verificationStatus === 'approved');
+  if (adminReferralFilter === 'assigned-code') {
+    return all.filter((org) => Boolean(org.referralCode));
   }
-  return all.filter((org) => org.verificationStatus !== 'approved');
+  return all.filter((org) => !org.referralCode);
 }
 
 function upsertDirectoryEntry(state, name, code, skipEntryId = null) {
@@ -1355,6 +1417,46 @@ function syncOrganizationCodeToDirectory(state, organization) {
   upsertDirectoryEntry(state, organization.name, organization.referralCode);
 }
 
+function addOrganizationNotice(organization, message) {
+  if (!organization || !message) return;
+  if (!Array.isArray(organization.notifications)) {
+    organization.notifications = [];
+  }
+  organization.notifications.unshift({
+    id: Date.now(),
+    message,
+    createdAt: new Date().toISOString()
+  });
+  organization.notifications = organization.notifications.slice(0, 12);
+}
+
+function assignReferralCodeToOrganization(state, organization, code) {
+  if (!state || !organization) {
+    return { ok: false, message: 'Organization not found.' };
+  }
+  const cleanCode = sanitizeReferralCode(code);
+  if (!cleanCode) {
+    return { ok: false, message: 'Invalid referral code.' };
+  }
+
+  const previousCode = organization.referralCode || '';
+  organization.referralCode = cleanCode;
+  organization.verificationStatus = 'verified';
+  organization.valid = true;
+  organization.compliant = true;
+
+  if (previousCode !== cleanCode) {
+    addOrganizationNotice(organization, `Your referral code is now available: ${cleanCode}. You can start sharing it with your members.`);
+  }
+
+  syncOrganizationCodeToDirectory(state, organization);
+  return {
+    ok: true,
+    code: cleanCode,
+    changed: previousCode !== cleanCode
+  };
+}
+
 function renderReferralDirectoryManager(state) {
   const searchInput = document.getElementById('referralDirectorySearch');
   const list = document.getElementById('referralDirectoryList');
@@ -1394,7 +1496,7 @@ function renderReferralDirectoryManager(state) {
   status.textContent = adminReferralDirectoryStatusMessage;
 
   const pendingOrganizations = state.organizations
-    .filter((org) => org.verificationStatus === 'pending')
+    .filter((org) => !org.referralCode)
     .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
   pendingOrgSelect.innerHTML = pendingOrganizations.length
     ? pendingOrganizations.map((org) => `<option value="${org.id}">${org.name}</option>`).join('')
@@ -1482,7 +1584,7 @@ function renderReferralDirectoryManager(state) {
 
   assignPendingButton.onclick = () => {
     const orgId = Number(pendingOrgSelect.value || 0);
-    const organization = state.organizations.find((org) => org.id === orgId && org.verificationStatus === 'pending');
+    const organization = state.organizations.find((org) => org.id === orgId && !org.referralCode);
     if (!organization) {
       adminReferralDirectoryStatusMessage = 'Select a pending organization first.';
       renderReferralDirectoryManager(state);
@@ -1496,9 +1598,14 @@ function renderReferralDirectoryManager(state) {
       return;
     }
 
-    organization.referralCode = match.code;
-    syncOrganizationCodeToDirectory(state, organization);
-    adminReferralDirectoryStatusMessage = `Assigned ${match.code} to ${organization.name}.`;
+    const assignment = assignReferralCodeToOrganization(state, organization, match.code);
+    if (!assignment.ok) {
+      adminReferralDirectoryStatusMessage = assignment.message;
+      renderReferralDirectoryManager(state);
+      return;
+    }
+
+    adminReferralDirectoryStatusMessage = `Assigned ${assignment.code} to ${organization.name}.`;
     saveState(state);
     renderAdmin(state);
   };
@@ -1552,12 +1659,12 @@ function renderAdminReferralsPanel(state) {
   }
 
   const allCount = state.organizations.length;
-  const pendingCount = state.organizations.filter((org) => org.verificationStatus !== 'approved').length;
-  const approvedCount = state.organizations.filter((org) => org.verificationStatus === 'approved').length;
+  const pendingCount = state.organizations.filter((org) => !org.referralCode).length;
+  const assignedCount = state.organizations.filter((org) => Boolean(org.referralCode)).length;
   toolbar.innerHTML = `
-    <span class="pill">Application review queue</span>
-    <button type="button" class="button ghost small" data-filter="pending">Pending (${pendingCount})</button>
-    <button type="button" class="button ghost small" data-filter="approved">Approved (${approvedCount})</button>
+    <span class="pill">Referral code assignment queue</span>
+    <button type="button" class="button ghost small" data-filter="awaiting-code">Awaiting code (${pendingCount})</button>
+    <button type="button" class="button ghost small" data-filter="assigned-code">Assigned code (${assignedCount})</button>
     <button type="button" class="button ghost small" data-filter="all">All (${allCount})</button>
   `;
 
@@ -1574,7 +1681,7 @@ function renderAdminReferralsPanel(state) {
 
   const rows = getFilteredReferrals(state);
   if (rows.length === 0) {
-    body.innerHTML = '<tr><td colspan="13">No organization profiles in this view.</td></tr>';
+    body.innerHTML = '<tr><td colspan="12">No organization profiles in this view.</td></tr>';
     return;
   }
 
@@ -1583,12 +1690,7 @@ function renderAdminReferralsPanel(state) {
     const payShot = profile.shopeePayScreenshotData
       ? `<a href="${profile.shopeePayScreenshotData}" target="_blank" rel="noreferrer">View</a>`
       : (profile.shopeePayScreenshotName || '-');
-    const status = org.verificationStatus === 'approved'
-      ? 'approved'
-      : org.verificationStatus === 'rejected'
-        ? 'rejected'
-        : 'pending';
-    const reasonOptions = ['<option value="">Select reason</option>', ...DECLINE_REASONS.map((reason) => `<option value="${reason}">${reason}</option>`)].join('');
+    const status = org.referralCode ? 'approved' : 'pending';
     return `
     <tr>
       <td><input type="checkbox" class="ref-select" data-org-id="${org.id}" /></td>
@@ -1601,20 +1703,13 @@ function renderAdminReferralsPanel(state) {
       <td>${profile.contactNumber || '-'}</td>
       <td>${profile.shopeeUsername || '-'}</td>
       <td>${payShot}</td>
-      <td>
-        <select class="decline-reason-select" data-org-id="${org.id}">
-          ${reasonOptions}
-        </select>
-      </td>
-      <td><span class="referral-status-pill ${status}">${status}</span></td>
+      <td><span class="referral-status-pill ${status}">${org.referralCode ? 'code assigned' : 'awaiting code'}</span></td>
       <td>
         <div class="admin-action-stack">
           <label class="assign-code-wrap">
             <input type="search" class="referral-assign-input" data-org-id="${org.id}" list="referralDirectoryOptions" placeholder="Search org/code" value="${org.referralCode || ''}" />
           </label>
           <button type="button" class="button ghost small" data-action="assign-code" data-org-id="${org.id}">Assign code</button>
-          <button type="button" class="button ghost small" data-action="${status === 'approved' ? 'revert' : 'approve'}" data-org-id="${org.id}">${status === 'approved' ? 'Set pending' : 'Approve'}</button>
-          <button type="button" class="button ghost small" data-action="decline" data-org-id="${org.id}">Decline</button>
           <button type="button" class="button ghost small" data-action="reset-password" data-org-id="${org.id}">Reset password</button>
           <button type="button" class="button ghost small danger" data-action="delete" data-org-id="${org.id}">Delete</button>
         </div>
@@ -1622,15 +1717,6 @@ function renderAdminReferralsPanel(state) {
     </tr>
   `;
   }).join('');
-
-  body.querySelectorAll('.decline-reason-select').forEach((select) => {
-    const orgId = Number(select.dataset.orgId);
-    const org = state.organizations.find((entry) => entry.id === orgId);
-    if (!org) return;
-    if (org.rejectionReason) {
-      select.value = org.rejectionReason;
-    }
-  });
 
   body.querySelectorAll('button[data-action]').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -1644,39 +1730,10 @@ function renderAdminReferralsPanel(state) {
           window.alert('Select a valid referral directory entry from the dropdown, or type an existing code.');
           return;
         }
-        organization.referralCode = entry.code;
-        syncOrganizationCodeToDirectory(state, organization);
-      } else if (button.dataset.action === 'approve') {
-        if (!organization.referralCode) {
-          window.alert('Assign a referral code before approving this application.');
+        const assignment = assignReferralCodeToOrganization(state, organization, entry.code);
+        if (!assignment.ok) {
+          window.alert(assignment.message || 'Unable to assign code right now.');
           return;
-        }
-        organization.verificationStatus = 'approved';
-        organization.valid = true;
-        organization.compliant = true;
-        organization.rejectionReason = '';
-      } else if (button.dataset.action === 'revert') {
-        organization.verificationStatus = 'pending';
-        organization.valid = false;
-        organization.compliant = false;
-        organization.rejectionReason = '';
-      } else if (button.dataset.action === 'decline') {
-        const reasonSelect = body.querySelector(`.decline-reason-select[data-org-id="${orgId}"]`);
-        const reason = reasonSelect?.value || '';
-        if (!reason) {
-          window.alert('Please select a decline reason before rejecting this registration.');
-          return;
-        }
-        organization.verificationStatus = 'rejected';
-        organization.valid = false;
-        organization.compliant = false;
-        organization.rejectionReason = reason;
-        if (organization.email) {
-          try {
-            await sendDenialEmail(organization.email, organization.name, reason);
-          } catch (_error) {
-            // Keep rejection flow working even when email service is not configured.
-          }
         }
       } else if (button.dataset.action === 'reset-password') {
         openAdminPasswordResetModal(state, orgId);
@@ -1729,7 +1786,7 @@ async function copyReferrals(state, selectedOnly) {
     row.profile?.contactPosition || '-',
     row.profile?.contactNumber || '-',
     row.profile?.shopeeUsername || '-',
-    row.verificationStatus === 'approved' ? 'approved' : row.verificationStatus === 'rejected' ? 'rejected' : 'pending'
+    row.referralCode ? 'code assigned' : 'awaiting code'
   ].join('\t'));
   const output = [header.join('\t'), ...lines].join('\n');
 
@@ -1746,15 +1803,6 @@ function handleLogin(state, event) {
   const email = document.getElementById('loginEmail').value.trim();
   const password = document.getElementById('loginPassword').value;
   const message = document.getElementById('authMessage');
-
-  const emailOwner = state.users.find((entry) => entry.email.toLowerCase() === email.toLowerCase());
-  if (emailOwner?.role === 'organization') {
-    const org = state.organizations.find((entry) => entry.id === emailOwner.organizationId);
-    if (org?.verificationStatus === 'rejected') {
-      message.textContent = `Registration declined: ${org.rejectionReason || 'Please contact admin for details.'}`;
-      return;
-    }
-  }
 
   const user = state.users.find((entry) => entry.email === email && entry.password === password);
   if (!user) {
@@ -1844,7 +1892,7 @@ async function completeRegistrationAfterTerms(state, message) {
   pendingRegistrationDraft = null;
   closeTermsModal();
   closeEmailVerificationModal();
-  message.textContent = 'Registration submitted for verification.';
+  message.textContent = 'Registration complete. You can now log in.';
   showRegisterSubmittedModal();
 }
 
@@ -1864,8 +1912,8 @@ async function handleRegister(state, event) {
   const message = document.getElementById('authMessage');
 
   const normalizedAcronym = acronym.replace(/[^A-Z0-9]/g, '');
-  if (!normalizedAcronym || normalizedAcronym.length > 6 || /\s|\(|\)/.test(acronym)) {
-    message.textContent = 'Acronym must be 1 to 6 letters/numbers only, with no spaces or parentheses.';
+  if (!normalizedAcronym || normalizedAcronym.length > 12 || /[^A-Z]/.test(normalizedAcronym)) {
+    message.textContent = 'Acronym must be 1 to 12 letters only, with no spaces, numbers, or symbols.';
     return;
   }
 
@@ -1890,6 +1938,17 @@ async function handleRegister(state, event) {
     return;
   }
 
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    message.textContent = 'Please enter a valid organization email address.';
+    return;
+  }
+
+  const orgEmailDomain = email.split('@')[1] || '';
+  if (!/\.(edu|edu\.ph)$/i.test(orgEmailDomain) && !/^(org|office|admin|official)[-.]/i.test(orgEmailDomain)) {
+    message.textContent = 'Please use the official organization email address, not a personal email.';
+    return;
+  }
+
   if (!shopeePayScreenshotFile) {
     message.textContent = 'Please upload the required ShopeePay screenshot for verification.';
     return;
@@ -1903,6 +1962,11 @@ async function handleRegister(state, event) {
   const phoneUseCount = state.organizations.filter((org) => (org.profile?.contactNumber || '') === contactNumber).length;
   if (phoneUseCount >= 2) {
     message.textContent = 'This contact number has reached the maximum allowed usage (2).';
+    return;
+  }
+
+  if (!/^09\d{9}$/.test(contactNumber)) {
+    message.textContent = 'Contact number must follow the format 09171234567.';
     return;
   }
 
@@ -1937,10 +2001,11 @@ async function handleRegister(state, event) {
     university,
     qualifiedReferrals: 0,
     weeklyReferrals: 0,
-    valid: false,
-    compliant: false,
-    verificationStatus: 'pending',
+    valid: true,
+    compliant: true,
+    verificationStatus: 'verified',
     inquiries: [],
+    notifications: [],
     referralCode: '',
     trend: buildTrend(0),
     referrals: [],
@@ -1959,7 +2024,7 @@ async function handleRegister(state, event) {
   openTermsModal();
 }
 
-function handlePasswordHelp(state, event) {
+async function handlePasswordHelp(state, event) {
   event.preventDefault();
   const email = document.getElementById('helpEmail')?.value.trim();
   const contactPerson = document.getElementById('helpContactPerson')?.value.trim();
@@ -1979,12 +2044,17 @@ function handlePasswordHelp(state, event) {
     message,
     status: 'pending'
   });
-  saveState(state);
+  const persisted = await saveStateNow(state);
+  if (!persisted) {
+    saveState(state);
+    status.textContent = 'Request saved locally, but server sync failed. Please retry to ensure admin receives it.';
+    return;
+  }
   status.textContent = 'Password recovery request submitted. The team will reach out to you.';
   document.getElementById('passwordHelpForm')?.reset();
 }
 
-function handleInquiry(state, event) {
+async function handleInquiry(state, event) {
   event.preventDefault();
   const currentUser = getCurrentUser(state);
   if (!currentUser) return;
@@ -2003,7 +2073,12 @@ function handleInquiry(state, event) {
     response: '',
     repliedAt: null
   });
-  saveState(state);
+  const persisted = await saveStateNow(state);
+  if (!persisted) {
+    saveState(state);
+    status.textContent = 'Inquiry queued locally, but server sync failed. Please resend once your connection is stable.';
+    return;
+  }
   status.textContent = 'Inquiry sent to the admin.';
   document.getElementById('inquiryForm').reset();
   if (document.body.dataset.page === 'admin') {
@@ -2076,22 +2151,22 @@ async function attachPageHandlers() {
 
   const page = document.body.dataset.page;
   if (page === 'dashboard') {
-    requireAuth(state);
+    if (!requireAuth(state)) return;
     renderDashboard(state);
-    document.getElementById('inquiryForm')?.addEventListener('submit', (event) => handleInquiry(state, event));
+    document.getElementById('inquiryForm')?.addEventListener('submit', async (event) => handleInquiry(state, event));
     document.getElementById('changePasswordForm')?.addEventListener('submit', (event) => handleChangePassword(state, event));
   }
 
   if (page === 'leaderboard') {
-    requireAuth(state);
+    if (!requireAuth(state)) return;
     renderLeaderboard(state);
   }
 
   if (page === 'admin') {
-    requireAuth(state);
+    if (!requireAuth(state)) return;
     const currentUser = getCurrentUser(state);
     if (currentUser?.email !== ADMIN_EMAIL) {
-      window.location.href = 'dashboard.html';
+      window.location.replace('dashboard.html');
       return;
     }
     document.body.dataset.role = 'admin';
@@ -2105,6 +2180,21 @@ async function attachPageHandlers() {
     });
     document.body.appendChild(modal);
     renderAdmin(state);
+    if (adminSyncTimer) {
+      window.clearInterval(adminSyncTimer);
+    }
+    adminSyncTimer = window.setInterval(async () => {
+      const refreshed = await refreshSharedState(state);
+      if (refreshed) {
+        renderAdmin(state);
+      }
+    }, 5000);
+    window.addEventListener('beforeunload', () => {
+      if (adminSyncTimer) {
+        window.clearInterval(adminSyncTimer);
+        adminSyncTimer = null;
+      }
+    });
     document.getElementById('copySelectedReferrals')?.addEventListener('click', () => copyReferrals(state, true));
     document.getElementById('copyAllReferrals')?.addEventListener('click', () => copyReferrals(state, false));
     document.getElementById('weeklyOrgSelect')?.addEventListener('change', () => {
@@ -2123,7 +2213,7 @@ async function attachPageHandlers() {
   }
 
   document.getElementById('loginForm')?.addEventListener('submit', (event) => handleLogin(state, event));
-  document.getElementById('passwordHelpForm')?.addEventListener('submit', (event) => handlePasswordHelp(state, event));
+  document.getElementById('passwordHelpForm')?.addEventListener('submit', async (event) => handlePasswordHelp(state, event));
   document.getElementById('registerForm')?.addEventListener('submit', async (event) => {
     await handleRegister(state, event);
   });
