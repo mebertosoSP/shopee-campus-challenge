@@ -1943,12 +1943,6 @@ async function handleRegister(state, event) {
     return;
   }
 
-  const orgEmailDomain = email.split('@')[1] || '';
-  if (!/\.(edu|edu\.ph)$/i.test(orgEmailDomain) && !/^(org|office|admin|official)[-.]/i.test(orgEmailDomain)) {
-    message.textContent = 'Please use the official organization email address, not a personal email.';
-    return;
-  }
-
   if (!shopeePayScreenshotFile) {
     message.textContent = 'Please upload the required ShopeePay screenshot for verification.';
     return;
