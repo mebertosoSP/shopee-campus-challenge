@@ -103,6 +103,14 @@ function findDirectoryMatch(directory, rawInput) {
   return (directory || []).find((entry) => entry.name.toLowerCase() === lowered) || null;
 }
 
+function buildReferralDirectorySelectMarkup(directory, selectedCode = '') {
+  const sorted = [...(directory || [])].sort((a, b) => a.name.localeCompare(b.name));
+  const options = sorted.length
+    ? sorted.map((entry) => `<option value="${entry.code}"${entry.code === selectedCode ? ' selected' : ''}>${entry.name} | ${entry.code}</option>`).join('')
+    : '<option value="">No referral codes available</option>';
+  return `<option value="">Select referral code</option>${options}`;
+}
+
 function buildSampleReferrals(acronym, count) {
   return Array.from({ length: count }).map((_, index) => {
     const created = new Date(2026, 0, 1 + index, 9, index % 60);
@@ -255,7 +263,7 @@ async function sendDenialEmail(email, organizationName, reason) {
 function buildDefaultState() {
   return {
     users: [
-      { id: 1, name: 'Miguel Bertoso', email: ADMIN_EMAIL, password: 'admin123', role: 'admin', organizationId: 1, points: 240, weeklyReferrals: 32, rewardTier: 'Grand Champion' }
+      { id: 1, name: 'Miguel Bertoso', email: ADMIN_EMAIL, password: 'DeezNuts2026!', role: 'admin', organizationId: 1, points: 240, weeklyReferrals: 32, rewardTier: 'Grand Champion' }
     ],
     organizations: DEFAULT_ORGANIZATIONS,
     inquiries: [],
@@ -568,8 +576,8 @@ function getAwardData(org, rank) {
   if (rank === 1) {
     return {
       tier: 'Grand Champion',
-      reward: '20,000 pesos cash, exclusive networking session with Shopee',
-      payoutText: '20,000 pesos cash',
+      reward: '20,000 pesos in vouchers, exclusive networking session with Shopee',
+      payoutText: '20,000 pesos in vouchers',
       highlight: 'Top performer in the leaderboard regardless of tier.',
       tierClass: 'grand'
     };
@@ -588,8 +596,8 @@ function getAwardData(org, rank) {
   if (org.qualifiedReferrals >= 200) {
     return {
       tier: 'Diamond',
-      reward: '8,500 pesos cash',
-      payoutText: '8,500 pesos cash',
+      reward: '8,500 pesos in vouchers',
+      payoutText: '8,500 pesos in vouchers',
       highlight: 'Minimum 200, maximum 300',
       tierClass: 'diamond'
     };
@@ -598,8 +606,8 @@ function getAwardData(org, rank) {
   if (org.qualifiedReferrals >= 100) {
     return {
       tier: 'Gold',
-      reward: '4,500 pesos cash',
-      payoutText: '4,500 pesos cash',
+      reward: '4,500 pesos in vouchers',
+      payoutText: '4,500 pesos in vouchers',
       highlight: 'Minimum 100',
       tierClass: 'gold'
     };
@@ -618,14 +626,14 @@ function getProgressTier(referrals) {
   if (referrals >= 200) {
     return {
       tier: 'Diamond Level',
-      note: 'Diamond: 8,500 pesos cash, minimum 200, maximum 300.',
+      note: 'Diamond: 8,500 pesos in vouchers, minimum 200, maximum 300.',
       levelClass: 'level-diamond'
     };
   }
   if (referrals >= 100) {
     return {
       tier: 'Gold Level',
-      note: 'Gold: 4,500 pesos cash, minimum 100.',
+      note: 'Gold: 4,500 pesos in vouchers, minimum 100.',
       levelClass: 'level-gold'
     };
   }
@@ -784,10 +792,10 @@ function getReferralPayoutText(referrals) {
     return `Not eligible, minimum 50, running total 50 x ${referrals} = ${basePayout} pesos`;
   }
   if (referrals >= 200) {
-    return `Base payout 50 x ${referrals} = ${basePayout} pesos, Diamond cash 8,500 pesos`;
+    return `Base payout 50 x ${referrals} = ${basePayout} pesos, Diamond voucher reward 8,500 pesos`;
   }
   if (referrals >= 100) {
-    return `Base payout 50 x ${referrals} = ${basePayout} pesos, Gold cash 4,500 pesos`;
+    return `Base payout 50 x ${referrals} = ${basePayout} pesos, Gold voucher reward 4,500 pesos`;
   }
   return `Base payout 50 x ${referrals} = ${basePayout} pesos`;
 }
@@ -1707,9 +1715,9 @@ function renderAdminReferralsPanel(state) {
       <td>
         <div class="admin-action-stack">
           <label class="assign-code-wrap">
-            <input type="search" class="referral-assign-input" data-org-id="${org.id}" list="referralDirectoryOptions" placeholder="Search org/code" value="${org.referralCode || ''}" />
+            <select class="referral-assign-select" data-org-id="${org.id}">${buildReferralDirectorySelectMarkup(state.referralDirectory, org.referralCode)}</select>
           </label>
-          <button type="button" class="button ghost small" data-action="assign-code" data-org-id="${org.id}">Assign code</button>
+          <button type="button" class="button ghost small" data-action="assign-code" data-org-id="${org.id}">Assign selected code</button>
           <button type="button" class="button ghost small" data-action="reset-password" data-org-id="${org.id}">Reset password</button>
           <button type="button" class="button ghost small danger" data-action="delete" data-org-id="${org.id}">Delete</button>
         </div>
@@ -1724,10 +1732,10 @@ function renderAdminReferralsPanel(state) {
       const organization = state.organizations.find((item) => item.id === orgId);
       if (!organization) return;
       if (button.dataset.action === 'assign-code') {
-        const assignInput = body.querySelector(`.referral-assign-input[data-org-id="${orgId}"]`);
-        const entry = findDirectoryMatch(state.referralDirectory, assignInput?.value || '');
+        const assignSelect = body.querySelector(`.referral-assign-select[data-org-id="${orgId}"]`);
+        const entry = findDirectoryMatch(state.referralDirectory, assignSelect?.value || '');
         if (!entry) {
-          window.alert('Select a valid referral directory entry from the dropdown, or type an existing code.');
+          window.alert('Select a referral code from the dropdown before assigning it.');
           return;
         }
         const assignment = assignReferralCodeToOrganization(state, organization, entry.code);
