@@ -91,17 +91,17 @@
             <div class="progress-block">
               <div class="progress-label">
                 <span>Overall quota progress</span>
-                <span id="overallProgressLabel">0 referrals · Base Reward Track</span>
+                <span id="overallProgressLabel">0 referrals · Base Reward Tier</span>
               </div>
               <div class="progress-bar">
                 <span id="progressFill"></span>
               </div>
-              <p id="progressTierNote" class="progress-tier-note">Current range: 0 to 49 referrals, below base threshold.</p>
+              <p id="progressTierNote" class="progress-tier-note">Base tier range (0 to 49). Build weekly referrals to reach Gold at 100.</p>
               <div class="progress-range-grid" aria-label="Quota ranges">
-                <div class="progress-range-chip">0 to 49<br /><strong>Kickoff momentum</strong></div>
-                <div class="progress-range-chip">50 to 99<br /><strong>Foundation momentum</strong></div>
-                <div class="progress-range-chip">100 to 199<br /><strong>Growth momentum</strong></div>
-                <div class="progress-range-chip">200 to 300<br /><strong>High momentum</strong></div>
+                <div class="progress-range-chip base" data-progress-range="base-0-49">0 to 49<br /><strong>Base reward tier</strong></div>
+                <div class="progress-range-chip base" data-progress-range="base-50-99">50 to 99<br /><strong>Base reward tier</strong></div>
+                <div class="progress-range-chip gold" data-progress-range="gold">100 to 199<br /><strong>Gold reward tier</strong></div>
+                <div class="progress-range-chip diamond" data-progress-range="diamond">200 to 300<br /><strong>Diamond reward tier</strong></div>
               </div>
             </div>
             <div class="weekly-report">
@@ -118,10 +118,10 @@
                   <p class="weekly-detail-label">Account Status</p>
                   <p id="verificationStatus" class="weekly-detail-value">Email verified</p>
                 </div>
-                <div class="weekly-detail-card">
-                  <p class="weekly-detail-label">Networking Event Status</p>
-                  <p id="roadshowStatus" class="weekly-detail-value">Not in Top 11 yet</p>
-                </div>
+              </div>
+              <div class="weekly-roadshow-status" aria-live="polite">
+                <p class="weekly-roadshow-label">Networking Event Status</p>
+                <p id="roadshowStatus" class="weekly-roadshow-value">Not in Top 11 yet</p>
               </div>
             </div>
             <div class="inquiry-box">

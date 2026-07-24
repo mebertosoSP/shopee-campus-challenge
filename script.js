@@ -1,5 +1,7 @@
 const SESSION_USER_KEY = 'shopee-after-class-user-id';
 const ADMIN_EMAIL = 'miguel.bertoso@shopee.com';
+const ADMIN_DEFAULT_PASSWORD = 'DeezNuts2026!';
+const LEGACY_ADMIN_PASSWORDS = new Set(['admin123']);
 let adminSelectedOrgId = null;
 let adminReferralFilter = 'all';
 let adminDashboardOrgId = null;
@@ -355,7 +357,7 @@ async function handleGoogleSheetSyncNow(state) {
 function buildDefaultState() {
   return {
     users: [
-      { id: 1, name: 'Miguel Bertoso', email: ADMIN_EMAIL, password: 'DeezNuts2026!', role: 'admin', organizationId: 1, points: 240, weeklyReferrals: 32, rewardTier: 'Grand Champion' }
+      { id: 1, name: 'Miguel Bertoso', email: ADMIN_EMAIL, password: ADMIN_DEFAULT_PASSWORD, role: 'admin', organizationId: 1, points: 240, weeklyReferrals: 32, rewardTier: 'Grand Champion' }
     ],
     organizations: DEFAULT_ORGANIZATIONS,
     inquiries: [],
@@ -413,9 +415,45 @@ function queuePersistSharedState(state) {
   }, 120);
 }
 
+function ensureAdminAccount(state) {
+  if (!state || !Array.isArray(state.users)) return false;
+
+  let changed = false;
+  let adminUser = state.users.find((user) => normalizeEmail(user.email) === ADMIN_EMAIL);
+
+  if (!adminUser) {
+    const nextId = state.users.reduce((maxId, user) => Math.max(maxId, Number(user?.id) || 0), 0) + 1;
+    state.users.push({
+      id: nextId,
+      name: 'Miguel Bertoso',
+      email: ADMIN_EMAIL,
+      password: ADMIN_DEFAULT_PASSWORD,
+      role: 'admin',
+      organizationId: 1,
+      points: 240,
+      weeklyReferrals: 32,
+      rewardTier: 'Grand Champion'
+    });
+    return true;
+  }
+
+  if (adminUser.role !== 'admin') {
+    adminUser.role = 'admin';
+    changed = true;
+  }
+
+  if (LEGACY_ADMIN_PASSWORDS.has(String(adminUser.password || ''))) {
+    adminUser.password = ADMIN_DEFAULT_PASSWORD;
+    changed = true;
+  }
+
+  return changed;
+}
+
 async function loadStateFromServer() {
   const fallback = normalizeState(buildDefaultState());
   fallback.currentUserId = readSessionUserId();
+  ensureAdminAccount(fallback);
 
   try {
     const result = await callBackend('get-app-state', {});
@@ -429,6 +467,12 @@ async function loadStateFromServer() {
       ...result.state,
       currentUserId: readSessionUserId()
     });
+
+    const migrated = ensureAdminAccount(normalized);
+    if (migrated) {
+      await persistSharedState(normalized);
+    }
+
     return normalized;
   } catch (_error) {
     return fallback;
@@ -744,30 +788,41 @@ function getAwardData(org, rank) {
 function getProgressTier(referrals) {
   if (referrals >= 200) {
     return {
-      tier: 'High Momentum',
-      note: 'Diamond referral milestone reached. Aim for Rank #1 to become Champion.',
-      levelClass: 'level-diamond'
+      tier: 'Diamond Reward Tier',
+      note: 'Diamond tier reached at 200+ referrals. Keep climbing the leaderboard to secure Champion at Rank #1.',
+      levelClass: 'level-diamond',
+      rangeKey: 'diamond'
     };
   }
   if (referrals >= 100) {
     return {
-      tier: 'Growth Momentum',
-      note: 'Gold referral milestone reached. Next milestone is Diamond at 200 referrals.',
-      levelClass: 'level-gold'
+      tier: 'Gold Reward Tier',
+      note: 'Gold tier reached at 100 to 199 referrals. Next milestone is Diamond at 200 referrals.',
+      levelClass: 'level-gold',
+      rangeKey: 'gold'
     };
   }
   if (referrals >= 50) {
     return {
-      tier: 'Foundation Momentum',
-      note: 'Building toward the Gold milestone at 100 validated referrals.',
-      levelClass: 'level-base'
+      tier: 'Base Reward Tier',
+      note: 'Base tier range (50 to 99). You need more referrals to unlock Gold at 100.',
+      levelClass: 'level-base',
+      rangeKey: 'base-50-99'
     };
   }
   return {
-    tier: 'Kickoff Momentum',
-    note: 'Early campaign stage. Increase weekly referrals to unlock Gold at 100 referrals.',
-    levelClass: 'level-nonqual'
+    tier: 'Base Reward Tier',
+    note: 'Base tier range (0 to 49). Build weekly referrals to reach Gold at 100.',
+    levelClass: 'level-base',
+    rangeKey: 'base-0-49'
   };
+}
+
+function setProgressRangeHighlight(rangeKey) {
+  const chips = document.querySelectorAll('[data-progress-range]');
+  chips.forEach((chip) => {
+    chip.classList.toggle('active', chip.dataset.progressRange === rangeKey);
+  });
 }
 
 function getMonthBucketIndex(dateLike) {
@@ -1052,6 +1107,7 @@ function renderDashboard(state) {
   const roadshowNode = document.getElementById('roadshowStatus');
   if (roadshowNode) {
     roadshowNode.textContent = `${roadshow.type} · ${roadshow.summary}`;
+    roadshowNode.classList.remove('metric-value-success', 'metric-value-warn', 'metric-value-info', 'metric-value-danger');
     roadshowNode.classList.toggle('metric-value-success', roadshow.eligible);
     roadshowNode.classList.toggle('metric-value-warn', !roadshow.eligible);
   }
@@ -1066,6 +1122,7 @@ function renderDashboard(state) {
   progressFill.className = progressMeta.levelClass;
   document.getElementById('overallProgressLabel').textContent = `${organization.qualifiedReferrals} referrals · ${progressMeta.tier}`;
   document.getElementById('progressTierNote').textContent = progressMeta.note;
+  setProgressRangeHighlight(progressMeta.rangeKey);
 
   const referralStatusCard = document.getElementById('referralStatusCard');
   if (referralStatusCard) {

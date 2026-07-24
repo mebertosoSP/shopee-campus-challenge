@@ -352,7 +352,6 @@ h3 { margin: 0 0 8px; }
 .progress-label { display: flex; justify-content: space-between; font-weight: 700; margin-bottom: 8px; }
 .progress-bar { height: 10px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
 .progress-bar span { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--primary)); border-radius: inherit; }
-.progress-bar span.level-nonqual { background: linear-gradient(90deg, #ef4444, #fca5a5); }
 .progress-bar span.level-base { background: linear-gradient(90deg, #64748b, #cbd5e1); }
 .progress-bar span.level-gold { background: linear-gradient(90deg, #d97706, #facc15); }
 .progress-bar span.level-diamond { background: linear-gradient(90deg, #2563eb, #93c5fd); }
@@ -385,6 +384,22 @@ h3 { margin: 0 0 8px; }
   color: #0f172a;
   font-size: 0.82rem;
 }
+.progress-range-chip.base {
+  border-color: #475569;
+  background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+}
+.progress-range-chip.gold {
+  border-color: #a16207;
+  background: linear-gradient(135deg, #ffe58b, #ffd247);
+}
+.progress-range-chip.diamond {
+  border-color: #1d4ed8;
+  background: linear-gradient(135deg, #c3dcff, #7db6ff);
+}
+.progress-range-chip.active {
+  border-width: 2px;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.2);
+}
 .weekly-report-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -407,6 +422,29 @@ h3 { margin: 0 0 8px; }
   font-weight: 800;
 }
 .weekly-detail-value {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.35;
+  color: #111827;
+  font-weight: 800;
+}
+.weekly-roadshow-status {
+  border: 1px solid #111111;
+  border-radius: 14px;
+  padding: 12px;
+  background: #ffffff;
+  display: grid;
+  gap: 6px;
+}
+.weekly-roadshow-label {
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 800;
+}
+.weekly-roadshow-value {
   margin: 0;
   font-size: 0.98rem;
   line-height: 1.35;
