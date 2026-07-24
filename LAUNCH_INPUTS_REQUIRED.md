@@ -30,11 +30,16 @@ Please provide these before we execute final deployment:
 1. Netlify environment variables:
    - `RESEND_API_KEY`
    - `EMAIL_FROM` (example: `ACC Team <no-reply@yourdomain.com>`)
+   - `GOOGLE_SHEETS_ID`
+   - `GOOGLE_SHEETS_RANGE` (example: `Leaderboard!A:C`)
+   - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+   - `GOOGLE_PRIVATE_KEY` (preserve line breaks with `\\n`)
 2. Email provider account:
    - Resend account with verified sender domain
 3. Netlify Functions enabled:
    - This project uses `netlify/functions/*` and Netlify Blobs for shared app state storage.
    - Shared data (users, organizations, inquiries, referral directory) is persisted server-side.
+   - Google Sheet sync functions are also hosted in `netlify/functions/*`.
    - Login session uses browser session storage only for the active user id.
 
 ## One-time deploy prep after pulling latest code
@@ -42,3 +47,4 @@ Please provide these before we execute final deployment:
 1. Run `npm install`
 2. Deploy to Netlify
 3. Add `RESEND_API_KEY` and `EMAIL_FROM` in Netlify Project Settings > Environment Variables
+4. Add `GOOGLE_SHEETS_ID`, `GOOGLE_SHEETS_RANGE`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, and `GOOGLE_PRIVATE_KEY` in Netlify Project Settings > Environment Variables

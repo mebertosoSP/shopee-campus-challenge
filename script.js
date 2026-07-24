@@ -11,9 +11,11 @@ let adminEditingDirectoryId = null;
 let adminReferralDirectoryStatusMessage = '';
 let pendingRegistrationDraft = null;
 let adminSyncTimer = null;
+let adminSheetWindowTimer = null;
 const CAMPAIGN_END_ISO = '2026-10-03T23:59:59';
 const REFERRAL_DIRECTORY_PAGE_SIZE = 8;
 const FUNCTIONS_BASE = '/.netlify/functions';
+const ROADSHOW_MAX_RANK = 11;
 let saveStateTimer = null;
 const DECLINE_REASONS = [
   'Acronym is not appropriate.',
@@ -260,6 +262,96 @@ async function sendDenialEmail(email, organizationName, reason) {
   });
 }
 
+function formatDateTimeLabel(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+  return date.toLocaleString();
+}
+
+async function refreshGoogleSheetWindow() {
+  const status = document.getElementById('googleSheetStatus');
+  const lastSync = document.getElementById('googleSheetLastSync');
+  const body = document.getElementById('googleSheetTableBody');
+  const mismatchList = document.getElementById('googleSheetMismatchList');
+  if (!body) return;
+
+  if (status) {
+    status.textContent = 'Loading Google Sheet window...';
+  }
+
+  try {
+    const result = await callBackend('get-google-sheet-leaderboard', {});
+    const rows = Array.isArray(result.rows) ? result.rows : [];
+
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="4">No rows found in Google Sheet.</td></tr>';
+    } else {
+      body.innerHTML = rows.map((row) => `
+        <tr>
+          <td>${row.referralCode || '-'}</td>
+          <td>${Number(row.successfulReferralCount || 0)}</td>
+          <td>${formatDateTimeLabel(row.latestVoucherTimestamp)}</td>
+          <td>${row.organizationName || '-'}</td>
+        </tr>
+      `).join('');
+    }
+
+    const unmatchedSheetCodes = Array.isArray(result.unmatchedSheetCodes) ? result.unmatchedSheetCodes : [];
+    const unmatchedOrganizations = Array.isArray(result.unmatchedOrganizations) ? result.unmatchedOrganizations : [];
+    const mismatchItems = [];
+
+    if (unmatchedSheetCodes.length) {
+      mismatchItems.push(`<div class="mission-item"><span>Sheet-only codes (${unmatchedSheetCodes.length})</span><span class="pill">${unmatchedSheetCodes.slice(0, 8).join(', ')}${unmatchedSheetCodes.length > 8 ? ' ...' : ''}</span></div>`);
+    }
+
+    if (unmatchedOrganizations.length) {
+      mismatchItems.push(`<div class="mission-item"><span>Org codes missing in sheet (${unmatchedOrganizations.length})</span><span class="pill">${unmatchedOrganizations.slice(0, 4).map((org) => org.referralCode).join(', ')}${unmatchedOrganizations.length > 4 ? ' ...' : ''}</span></div>`);
+    }
+
+    if (mismatchList) {
+      mismatchList.innerHTML = mismatchItems.length
+        ? mismatchItems.join('')
+        : '<div class="mission-item"><span>All assigned referral codes currently have sheet matches.</span></div>';
+    }
+
+    if (lastSync) {
+      lastSync.textContent = `Last leaderboard sync: ${formatDateTimeLabel(result.lastSyncedAt)}`;
+    }
+
+    if (status) {
+      status.textContent = `Google Sheet window loaded: ${rows.length} row(s), ${Number(result.matchedCount || 0)} matched to organizations.`;
+    }
+  } catch (error) {
+    if (status) {
+      status.textContent = `Unable to load Google Sheet window: ${error.message}`;
+    }
+  }
+}
+
+async function handleGoogleSheetSyncNow(state) {
+  const status = document.getElementById('googleSheetStatus');
+  if (status) {
+    status.textContent = 'Syncing Google Sheet tallies to leaderboard...';
+  }
+
+  try {
+    const result = await callBackend('sync-leaderboard-from-sheets', {});
+    await refreshSharedState(state);
+    renderAdmin(state);
+    await refreshGoogleSheetWindow();
+    if (status) {
+      status.textContent = `Sync complete: ${Number(result.updatedOrganizations || 0)} organization(s) updated from ${Number(result.totalSheetRows || 0)} sheet row(s).`;
+    }
+  } catch (error) {
+    if (status) {
+      status.textContent = `Sync failed: ${error.message}`;
+    }
+  }
+}
+
 function buildDefaultState() {
   return {
     users: [
@@ -291,7 +383,8 @@ function extractSharedState(state) {
     users: state.users || [],
     organizations: state.organizations || [],
     inquiries: state.inquiries || [],
-    referralDirectory: state.referralDirectory || []
+    referralDirectory: state.referralDirectory || [],
+    leaderboardSync: state.leaderboardSync || null
   };
 }
 
@@ -451,6 +544,7 @@ async function refreshSharedState(state) {
     state.organizations = normalized.organizations;
     state.inquiries = normalized.inquiries;
     state.referralDirectory = normalized.referralDirectory;
+    state.leaderboardSync = normalized.leaderboardSync || null;
     return true;
   } catch (_error) {
     return false;
@@ -570,54 +664,79 @@ function requireAuth(state) {
   return true;
 }
 
+function formatPeso(amount) {
+  return new Intl.NumberFormat('en-PH', {
+    style: 'currency',
+    currency: 'PHP',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(Number(amount) || 0);
+}
+
+function getRoadshowQualification(rank) {
+  if (rank === 1) {
+    return {
+      eligible: true,
+      type: 'Onsite Roadshow',
+      summary: 'Eligible for the Champion onsite roadshow.'
+    };
+  }
+  if (rank >= 2 && rank <= ROADSHOW_MAX_RANK) {
+    return {
+      eligible: true,
+      type: 'Virtual Roadshow',
+      summary: 'Eligible for the Top 2 to 11 virtual roadshow.'
+    };
+  }
+  return {
+    eligible: false,
+    type: 'No Roadshow Slot Yet',
+    summary: 'Not in the Top 11 leaderboard placements yet.'
+  };
+}
+
 function getAwardData(org, rank) {
-  const isQualified = org.qualifiedReferrals >= 50 && org.valid && org.compliant;
+  const referrals = Number(org?.qualifiedReferrals || 0);
 
   if (rank === 1) {
     return {
-      tier: 'Grand Champion',
-      reward: '20,000 pesos in vouchers, exclusive networking session with Shopee',
-      payoutText: '20,000 pesos in vouchers',
-      highlight: 'Top performer in the leaderboard regardless of tier.',
+      tier: 'Champion',
+      amount: 20000,
+      reward: `${formatPeso(20000)} in vouchers`,
+      payoutText: `${formatPeso(20000)} in vouchers`,
+      highlight: 'Rank #1 Champion override. Includes the onsite roadshow.',
       tierClass: 'grand'
     };
   }
 
-  if (!isQualified) {
-    return {
-      tier: 'Non-Qualifier',
-      reward: 'Below minimum quota',
-      payoutText: 'Not yet eligible',
-      highlight: 'Base threshold starts at 50 validated referrals',
-      tierClass: 'ineligible'
-    };
-  }
-
-  if (org.qualifiedReferrals >= 200) {
+  if (referrals >= 200) {
     return {
       tier: 'Diamond',
-      reward: '8,500 pesos in vouchers',
-      payoutText: '8,500 pesos in vouchers',
-      highlight: 'Minimum 200, maximum 300',
+      amount: 8500,
+      reward: `${formatPeso(8500)} in vouchers`,
+      payoutText: `${formatPeso(8500)} in vouchers`,
+      highlight: 'Referral-based tier: 200 or more validated referrals.',
       tierClass: 'diamond'
     };
   }
 
-  if (org.qualifiedReferrals >= 100) {
+  if (referrals >= 100) {
     return {
       tier: 'Gold',
-      reward: '4,500 pesos in vouchers',
-      payoutText: '4,500 pesos in vouchers',
-      highlight: 'Minimum 100',
+      amount: 4500,
+      reward: `${formatPeso(4500)} in vouchers`,
+      payoutText: `${formatPeso(4500)} in vouchers`,
+      highlight: 'Referral-based tier: 100 to 199 validated referrals.',
       tierClass: 'gold'
     };
   }
 
   return {
-    tier: 'Base Reward',
-    reward: '50 pesos per validated referral',
-    payoutText: '50 pesos per validated referral',
-    highlight: 'Minimum 50',
+    tier: 'Base',
+    amount: 0,
+    reward: `${formatPeso(0)} (all vouchers)`,
+    payoutText: `${formatPeso(0)} (all vouchers)`,
+    highlight: 'Referral-based tier: 0 to 99 validated referrals.',
     tierClass: 'base'
   };
 }
@@ -625,28 +744,28 @@ function getAwardData(org, rank) {
 function getProgressTier(referrals) {
   if (referrals >= 200) {
     return {
-      tier: 'Diamond Level',
-      note: 'Diamond: 8,500 pesos in vouchers, minimum 200, maximum 300.',
+      tier: 'High Momentum',
+      note: 'Diamond referral milestone reached. Aim for Rank #1 to become Champion.',
       levelClass: 'level-diamond'
     };
   }
   if (referrals >= 100) {
     return {
-      tier: 'Gold Level',
-      note: 'Gold: 4,500 pesos in vouchers, minimum 100.',
+      tier: 'Growth Momentum',
+      note: 'Gold referral milestone reached. Next milestone is Diamond at 200 referrals.',
       levelClass: 'level-gold'
     };
   }
   if (referrals >= 50) {
     return {
-      tier: 'Base Reward Level',
-      note: 'Range 50 to 99: 50 pesos per validated referral.',
+      tier: 'Foundation Momentum',
+      note: 'Building toward the Gold milestone at 100 validated referrals.',
       levelClass: 'level-base'
     };
   }
   return {
-    tier: 'Base Reward Track',
-    note: 'Range 0 to 49: below base threshold of 50 validated referrals.',
+    tier: 'Kickoff Momentum',
+    note: 'Early campaign stage. Increase weekly referrals to unlock Gold at 100 referrals.',
     levelClass: 'level-nonqual'
   };
 }
@@ -786,21 +905,12 @@ function renderCampaignCountdown() {
   window.setInterval(tick, 60000);
 }
 
-function getReferralPayoutText(referrals) {
-  const basePayout = referrals * 50;
-  if (referrals < 50) {
-    return `Not eligible, minimum 50, running total 50 x ${referrals} = ${basePayout} pesos`;
-  }
-  if (referrals >= 200) {
-    return `Base payout 50 x ${referrals} = ${basePayout} pesos, Diamond voucher reward 8,500 pesos`;
-  }
-  if (referrals >= 100) {
-    return `Base payout 50 x ${referrals} = ${basePayout} pesos, Gold voucher reward 4,500 pesos`;
-  }
-  return `Base payout 50 x ${referrals} = ${basePayout} pesos`;
+function getReferralPayoutText(organization, rank) {
+  const reward = getAwardData(organization, rank);
+  return `${reward.tier}: ${reward.payoutText}`;
 }
 
-function setDashboardMetricAccent(organization) {
+function setDashboardMetricAccent(organization, rank) {
   const nextTier = document.getElementById('nextTierValue');
   const payout = document.getElementById('estimatedPayout');
   const verification = document.getElementById('verificationStatus');
@@ -818,12 +928,15 @@ function setDashboardMetricAccent(organization) {
     verification.classList.add('metric-value-success');
   }
 
-  if (organization.qualifiedReferrals < 50) {
-    nextTier.classList.add('metric-value-warn');
-    payout.classList.add('metric-value-warn');
-  } else {
+  if (rank === 1 || organization.qualifiedReferrals >= 200) {
     nextTier.classList.add('metric-value-info');
     payout.classList.add('metric-value-success');
+  } else if (organization.qualifiedReferrals >= 100) {
+    nextTier.classList.add('metric-value-info');
+    payout.classList.add('metric-value-info');
+  } else {
+    nextTier.classList.add('metric-value-warn');
+    payout.classList.add('metric-value-warn');
   }
 }
 
@@ -902,6 +1015,7 @@ function renderDashboard(state) {
   const noticeBar = document.getElementById('dashboardNoticeBar');
   const rank = state.organizations.slice().sort((a, b) => b.qualifiedReferrals - a.qualifiedReferrals).findIndex((org) => org.id === organization.id) + 1;
   const award = getAwardData(organization, rank);
+  const roadshow = getRoadshowQualification(rank);
 
   const dashboardName = currentUser.role === 'admin'
     ? currentUser.name
@@ -925,15 +1039,22 @@ function renderDashboard(state) {
   document.getElementById('overallReferrals').textContent = organization.qualifiedReferrals;
   document.getElementById('tierValue').textContent = award.tier;
   document.getElementById('weeklyReferrals').textContent = organization.weeklyReferrals;
-  const nextTier = organization.qualifiedReferrals >= 200
-    ? 'Diamond range met, maintain performance up to 300 and compete for Rank 1'
-    : organization.qualifiedReferrals >= 100
-      ? 'Diamond Tier at 200 to 300 validated referrals'
-      : organization.qualifiedReferrals >= 50
-        ? 'Gold Tier at 100 to 199 validated referrals'
-        : 'Base threshold at 50 validated referrals';
+  const referrals = Number(organization.qualifiedReferrals || 0);
+  const nextTier = rank === 1
+    ? 'Champion status secured at Rank #1'
+    : referrals >= 200
+      ? 'Diamond tier reached. Push for Rank #1 to secure Champion reward.'
+      : referrals >= 100
+        ? `Need ${Math.max(0, 200 - referrals)} more referrals to reach Diamond tier`
+        : `Need ${Math.max(0, 100 - referrals)} more referrals to reach Gold tier`;
   document.getElementById('nextTierValue').textContent = nextTier;
-  document.getElementById('estimatedPayout').textContent = getReferralPayoutText(organization.qualifiedReferrals);
+  document.getElementById('estimatedPayout').textContent = getReferralPayoutText(organization, rank);
+  const roadshowNode = document.getElementById('roadshowStatus');
+  if (roadshowNode) {
+    roadshowNode.textContent = `${roadshow.type} · ${roadshow.summary}`;
+    roadshowNode.classList.toggle('metric-value-success', roadshow.eligible);
+    roadshowNode.classList.toggle('metric-value-warn', !roadshow.eligible);
+  }
   document.getElementById('verificationStatus').textContent = organization.verificationStatus === 'rejected'
     ? `Verification issue: ${organization.rejectionReason || 'Please contact admin.'}`
     : organization.referralCode
@@ -973,7 +1094,7 @@ function renderDashboard(state) {
     }
   }
 
-  setDashboardMetricAccent(organization);
+  setDashboardMetricAccent(organization, rank);
   renderDashboardProfileTable(state, organization);
   renderInquiryThread(state, organization.id);
 }
@@ -2182,6 +2303,7 @@ async function attachPageHandlers() {
     });
     document.body.appendChild(modal);
     renderAdmin(state);
+    refreshGoogleSheetWindow();
     if (adminSyncTimer) {
       window.clearInterval(adminSyncTimer);
     }
@@ -2191,11 +2313,27 @@ async function attachPageHandlers() {
         renderAdmin(state);
       }
     }, 5000);
+    if (adminSheetWindowTimer) {
+      window.clearInterval(adminSheetWindowTimer);
+    }
+    adminSheetWindowTimer = window.setInterval(() => {
+      refreshGoogleSheetWindow();
+    }, 60000);
     window.addEventListener('beforeunload', () => {
       if (adminSyncTimer) {
         window.clearInterval(adminSyncTimer);
         adminSyncTimer = null;
       }
+      if (adminSheetWindowTimer) {
+        window.clearInterval(adminSheetWindowTimer);
+        adminSheetWindowTimer = null;
+      }
+    });
+    document.getElementById('googleSheetRefreshBtn')?.addEventListener('click', () => {
+      refreshGoogleSheetWindow();
+    });
+    document.getElementById('googleSheetSyncNowBtn')?.addEventListener('click', async () => {
+      await handleGoogleSheetSyncNow(state);
     });
     document.getElementById('copySelectedReferrals')?.addEventListener('click', () => copyReferrals(state, true));
     document.getElementById('copyAllReferrals')?.addEventListener('click', () => copyReferrals(state, false));

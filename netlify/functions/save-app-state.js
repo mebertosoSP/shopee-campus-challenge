@@ -16,7 +16,15 @@ function sanitizeState(rawState) {
     users: Array.isArray(state.users) ? state.users : [],
     organizations: Array.isArray(state.organizations) ? state.organizations : [],
     inquiries: Array.isArray(state.inquiries) ? state.inquiries : [],
-    referralDirectory: Array.isArray(state.referralDirectory) ? state.referralDirectory : []
+    referralDirectory: Array.isArray(state.referralDirectory) ? state.referralDirectory : [],
+    leaderboardSync: state.leaderboardSync && typeof state.leaderboardSync === 'object'
+      ? {
+        source: String(state.leaderboardSync.source || ''),
+        lastSyncedAt: String(state.leaderboardSync.lastSyncedAt || ''),
+        updatedOrganizations: Number(state.leaderboardSync.updatedOrganizations || 0),
+        totalSheetRows: Number(state.leaderboardSync.totalSheetRows || 0)
+      }
+      : null
   };
 }
 

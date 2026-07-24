@@ -125,6 +125,37 @@
       <section class="dashboard-row full admin-full-row">
         <article class="card">
           <div class="card-header">
+            <h2>Google Sheet live window</h2>
+            <div class="button-group-inline">
+              <button type="button" class="button ghost small" id="googleSheetRefreshBtn">Refresh sheet window</button>
+              <button type="button" class="button secondary small" id="googleSheetSyncNowBtn">Sync sheet to leaderboard</button>
+            </div>
+          </div>
+          <p class="muted">Live feed from Google Sheets based on referral code, successful referral tally, and latest voucher timestamp.</p>
+          <p id="googleSheetStatus" class="form-message"></p>
+          <p id="googleSheetLastSync" class="helper-text">Last leaderboard sync: -</p>
+          <div class="table-wrap">
+            <table class="leaderboard-table referral-table">
+              <thead>
+                <tr>
+                  <th>Referral Code</th>
+                  <th>Successful Referrals</th>
+                  <th>Latest Voucher Timestamp</th>
+                  <th>Matched Organization</th>
+                </tr>
+              </thead>
+              <tbody id="googleSheetTableBody">
+                <tr><td colspan="4">No sheet data loaded yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="googleSheetMismatchList" class="mission-list"></div>
+        </article>
+      </section>
+
+      <section class="dashboard-row full admin-full-row">
+        <article class="card">
+          <div class="card-header">
             <h2>Manual Referral Encoder</h2>
           </div>
           <p class="muted">Select an organization, choose a week, and encode referrals. Entries update cumulative totals in the leaderboard.</p>

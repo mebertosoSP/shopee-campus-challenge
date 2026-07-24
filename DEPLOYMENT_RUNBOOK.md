@@ -52,15 +52,18 @@ Without access control, anyone with the link can still open it.
 1. Confirm placeholder orgs removed
 2. Confirm test data removed
 3. Set Netlify environment variables: `RESEND_API_KEY`, `EMAIL_FROM`
-4. Run `npm install` to include Netlify Functions dependency
-5. Take backup snapshot (zip project + git tag)
-6. Deploy once
-7. Smoke test pages after deploy:
+4. Set Google Sheets environment variables: `GOOGLE_SHEETS_ID`, `GOOGLE_SHEETS_RANGE`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`
+5. Run `npm install` to include Netlify Functions dependency
+6. Take backup snapshot (zip project + git tag)
+7. Deploy once
+8. Smoke test pages after deploy:
 	- Registration appears in admin on a second browser/device
 	- Email verification code is received and accepted
 	- Admin edits (approve/decline/referral code changes) appear on another browser after refresh
 	- Logging in/out on one browser does not sign out another browser session
-8. Send email with approved URL
+	- Admin Google Sheet live window loads rows and shows matched organization names
+	- Clicking "Sync sheet to leaderboard" updates leaderboard tallies
+9. Send email with approved URL
 
 ## F. Rollback plan
 

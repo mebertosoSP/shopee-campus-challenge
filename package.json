@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "Netlify Functions for ACC registration sync and email verification",
   "dependencies": {
-    "@netlify/blobs": "^8.1.0"
+    "@netlify/blobs": "^8.1.0",
+    "googleapis": "^142.0.0"
   }
 }
