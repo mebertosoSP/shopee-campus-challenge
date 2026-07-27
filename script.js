@@ -1,7 +1,7 @@
 const SESSION_USER_KEY = 'shopee-after-class-user-id';
+const ADMIN_TOKEN_KEY = 'shopee-after-class-admin-token';
+const ADMIN_TOKEN_EXP_KEY = 'shopee-after-class-admin-token-exp';
 const ADMIN_EMAIL = 'miguel.bertoso@shopee.com';
-const ADMIN_DEFAULT_PASSWORD = 'DeezNuts2026!';
-const LEGACY_ADMIN_PASSWORDS = new Set(['admin123']);
 let adminSelectedOrgId = null;
 let adminReferralFilter = 'all';
 let adminDashboardOrgId = null;
@@ -12,23 +12,23 @@ let adminReferralDirectoryPage = 1;
 let adminEditingDirectoryId = null;
 let adminReferralDirectoryStatusMessage = '';
 let pendingRegistrationDraft = null;
+let pendingRegistrationToken = '';
 let adminSyncTimer = null;
 let adminSheetWindowTimer = null;
 let adminSheetAutoSyncTimer = null;
 let googleSheetSyncInProgress = false;
+let cachedSheetCodes = null;
+let cachedSheetCodesFetchedAt = 0;
 const CAMPAIGN_END_ISO = '2026-10-03T23:59:59';
 const REFERRAL_DIRECTORY_PAGE_SIZE = 8;
 const FUNCTIONS_BASE = '/.netlify/functions';
 const ROADSHOW_MAX_RANK = 11;
 const GOOGLE_SHEET_AUTO_SYNC_INTERVAL_MS = 15 * 60 * 1000;
+const SHEET_CODES_CACHE_TTL_MS = 2 * 60 * 1000;
 // Temporary maintenance mode for campaign launch approval.
 const MAINTENANCE_MODE = true;
 // Temporary maintenance mode for campaign launch approval.
 const MAINTENANCE_BLOCKED_PAGES = new Set(['acc', 'dashboard', 'leaderboard', 'login', 'register']);
-// Temporary maintenance mode for campaign launch approval.
-const ADMIN_LOGIN_QUERY_PARAM = 'admin';
-// Temporary maintenance mode for campaign launch approval.
-const ADMIN_LOGIN_QUERY_VALUE = '1';
 let saveStateTimer = null;
 const DECLINE_REASONS = [
   'Proof of ShopeePay is insufficient. Please upload another screenshot of your verified ShopeePay.',
@@ -63,7 +63,7 @@ function parseReferralDirectorySeed(raw) {
 
 const SEEDED_REFERRAL_DIRECTORY = parseReferralDirectorySeed(window.REFERRAL_DIRECTORY_TSV || '');
 
-function normalizeReferralDirectory(parsedDirectory, organizations) {
+function normalizeReferralDirectory(parsedDirectory) {
   const merged = [];
   const seenCodes = new Set();
   let generatedId = (parsedDirectory || []).reduce((maxId, entry) => Math.max(maxId, Number(entry?.id) || 0), 0) + 1;
@@ -83,12 +83,6 @@ function normalizeReferralDirectory(parsedDirectory, organizations) {
 
   SEEDED_REFERRAL_DIRECTORY.forEach((entry) => pushEntry(entry.name, entry.code));
   (parsedDirectory || []).forEach((entry) => pushEntry(entry?.name, entry?.code, entry?.id));
-  (organizations || []).forEach((org) => {
-    if (org?.referralCode) {
-      pushEntry(org.name, org.referralCode);
-    }
-  });
-
   return merged.map((entry, index) => ({
     id: Number(entry.id) || index + 1,
     name: entry.name,
@@ -229,11 +223,17 @@ function findUserForLogin(state, email, password) {
 }
 
 async function callBackend(functionName, payload = {}) {
+  const headers = {
+    'Content-Type': 'application/json'
+  };
+  const adminToken = readAdminSessionToken();
+  if (adminToken) {
+    headers.Authorization = `Bearer ${adminToken}`;
+  }
+
   const response = await fetch(`${FUNCTIONS_BASE}/${functionName}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers,
     body: JSON.stringify(payload)
   });
 
@@ -245,6 +245,12 @@ async function callBackend(functionName, payload = {}) {
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearAdminSessionToken();
+      if (resolveCurrentPageKey() === 'admin') {
+        window.location.replace('login.html');
+      }
+    }
     throw new Error(data?.message || 'Request failed.');
   }
 
@@ -284,10 +290,11 @@ async function syncServerRegistrationsIntoState(state) {
   }
 }
 
-async function pushRegistrationToServer(newOrg, newUser) {
+async function pushRegistrationToServer(newOrg, newUser, registrationToken = '') {
   return callBackend('register-organization', {
     organization: newOrg,
-    user: newUser
+    user: newUser,
+    registrationToken
   });
 }
 
@@ -307,10 +314,18 @@ async function sendDenialEmail(email, organizationName, reason) {
   });
 }
 
-async function sendApprovalEmail(email, organizationName) {
+async function sendApprovalEmail(email, organizationName, referralCode = '') {
   return callBackend('send-approval-email', {
     email,
-    organizationName
+    organizationName,
+    referralCode
+  });
+}
+
+async function verifyAdminCredentials(email, password) {
+  return callBackend('verify-admin-credentials', {
+    email,
+    password
   });
 }
 
@@ -321,6 +336,33 @@ function formatDateTimeLabel(value) {
     return String(value);
   }
   return date.toLocaleString();
+}
+
+function updateSheetCodeCacheFromRows(rows) {
+  const nextSet = new Set((Array.isArray(rows) ? rows : [])
+    .map((row) => sanitizeReferralCode(row?.referralCode || ''))
+    .filter(Boolean));
+  cachedSheetCodes = nextSet;
+  cachedSheetCodesFetchedAt = Date.now();
+}
+
+async function getSheetReferralCodeSet(forceRefresh = false) {
+  const isCacheValid = cachedSheetCodes && (Date.now() - cachedSheetCodesFetchedAt) < SHEET_CODES_CACHE_TTL_MS;
+  if (!forceRefresh && isCacheValid) {
+    return cachedSheetCodes;
+  }
+
+  const result = await callBackend('get-google-sheet-leaderboard', {});
+  const rows = Array.isArray(result.rows) ? result.rows : [];
+  updateSheetCodeCacheFromRows(rows);
+  return cachedSheetCodes;
+}
+
+async function isReferralCodePresentInSheet(code, options = {}) {
+  const cleanCode = sanitizeReferralCode(code);
+  if (!cleanCode) return false;
+  const codeSet = await getSheetReferralCodeSet(Boolean(options.forceRefresh));
+  return codeSet.has(cleanCode);
 }
 
 async function refreshGoogleSheetWindow() {
@@ -337,6 +379,7 @@ async function refreshGoogleSheetWindow() {
   try {
     const result = await callBackend('get-google-sheet-leaderboard', {});
     const rows = Array.isArray(result.rows) ? result.rows : [];
+    updateSheetCodeCacheFromRows(rows);
 
     if (!rows.length) {
       body.innerHTML = '<tr><td colspan="4">No rows found in Google Sheet.</td></tr>';
@@ -420,7 +463,7 @@ async function handleGoogleSheetSyncNow(state, options = {}) {
 function buildDefaultState() {
   return {
     users: [
-      { id: 1, name: 'Miguel Bertoso', email: ADMIN_EMAIL, password: ADMIN_DEFAULT_PASSWORD, role: 'admin', organizationId: 1, points: 240, weeklyReferrals: 32, rewardTier: 'Grand Champion' }
+      { id: 1, name: 'Miguel Bertoso', email: ADMIN_EMAIL, password: '', role: 'admin', organizationId: 1, points: 240, weeklyReferrals: 32, rewardTier: 'Grand Champion' }
     ],
     organizations: DEFAULT_ORGANIZATIONS,
     inquiries: [],
@@ -443,6 +486,34 @@ function writeSessionUserId(userId) {
   }
 }
 
+function readAdminSessionToken() {
+  const token = String(window.sessionStorage.getItem(ADMIN_TOKEN_KEY) || '').trim();
+  const expiresAt = Number(window.sessionStorage.getItem(ADMIN_TOKEN_EXP_KEY) || 0);
+  if (!token || !Number.isFinite(expiresAt) || Date.now() >= expiresAt) {
+    window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+    window.sessionStorage.removeItem(ADMIN_TOKEN_EXP_KEY);
+    return '';
+  }
+  return token;
+}
+
+function writeAdminSessionToken(token, expiresAt) {
+  const cleanToken = String(token || '').trim();
+  const expiry = Number(expiresAt || 0);
+  if (!cleanToken || !Number.isFinite(expiry) || expiry <= Date.now()) {
+    window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+    window.sessionStorage.removeItem(ADMIN_TOKEN_EXP_KEY);
+    return;
+  }
+  window.sessionStorage.setItem(ADMIN_TOKEN_KEY, cleanToken);
+  window.sessionStorage.setItem(ADMIN_TOKEN_EXP_KEY, String(expiry));
+}
+
+function clearAdminSessionToken() {
+  window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+  window.sessionStorage.removeItem(ADMIN_TOKEN_EXP_KEY);
+}
+
 // Temporary maintenance mode for campaign launch approval.
 function resolveCurrentPageKey() {
   const explicitPage = (document.body?.dataset?.page || '').trim().toLowerCase();
@@ -454,15 +525,11 @@ function resolveCurrentPageKey() {
 // Temporary maintenance mode for campaign launch approval.
 function isAdminMaintenanceBypass(state, pageKey) {
   const currentUser = getCurrentUser(state);
-  if (normalizeEmail(currentUser?.email) === normalizeEmail(ADMIN_EMAIL)) {
+  if (currentUser?.role === 'admin') {
     return true;
   }
   if (pageKey === 'admin') {
     return true;
-  }
-  if (pageKey === 'login') {
-    const params = new URLSearchParams(window.location.search || '');
-    return params.get(ADMIN_LOGIN_QUERY_PARAM) === ADMIN_LOGIN_QUERY_VALUE;
   }
   return false;
 }
@@ -524,7 +591,7 @@ function ensureAdminAccount(state) {
       id: nextId,
       name: 'Miguel Bertoso',
       email: ADMIN_EMAIL,
-      password: ADMIN_DEFAULT_PASSWORD,
+      password: '',
       role: 'admin',
       organizationId: 1,
       points: 240,
@@ -539,12 +606,38 @@ function ensureAdminAccount(state) {
     changed = true;
   }
 
-  if (LEGACY_ADMIN_PASSWORDS.has(String(adminUser.password || ''))) {
-    adminUser.password = ADMIN_DEFAULT_PASSWORD;
+  if (adminUser.password) {
+    adminUser.password = '';
     changed = true;
   }
 
   return changed;
+}
+
+function getOrCreateAdminUser(state, email) {
+  const normalizedEmail = normalizeEmail(email || ADMIN_EMAIL);
+  let adminUser = (state.users || []).find((user) => user.role === 'admin' && normalizeEmail(user.email) === normalizedEmail);
+  if (adminUser) {
+    if (adminUser.password) {
+      adminUser.password = '';
+    }
+    return adminUser;
+  }
+
+  const nextId = (state.users || []).reduce((maxId, user) => Math.max(maxId, Number(user?.id) || 0), 0) + 1;
+  adminUser = {
+    id: nextId,
+    name: 'Admin',
+    email: normalizedEmail,
+    password: '',
+    role: 'admin',
+    organizationId: null,
+    points: 0,
+    weeklyReferrals: 0,
+    rewardTier: 'Admin'
+  };
+  state.users.push(adminUser);
+  return adminUser;
 }
 
 async function loadStateFromServer() {
@@ -615,20 +708,9 @@ function normalizeState(parsed) {
     };
   });
 
-  const usedCodes = new Set();
-  organizations.forEach((org) => {
-    if (org.referralCode && usedCodes.has(org.referralCode)) {
-      org.referralCode = generateReferralCode(org.acronym || org.name);
-      while (usedCodes.has(org.referralCode)) {
-        org.referralCode = generateReferralCode(org.acronym || org.name);
-      }
-    }
-    if (org.referralCode) {
-      usedCodes.add(org.referralCode);
-    }
-  });
+  refreshReferralCodeConflicts(organizations);
 
-  const referralDirectory = normalizeReferralDirectory(parsed.referralDirectory, organizations);
+  const referralDirectory = normalizeReferralDirectory(parsed.referralDirectory);
 
   return {
     ...parsed,
@@ -668,7 +750,8 @@ function normalizeState(parsed) {
     users: (parsed.users || []).map((user) => ({
       ...user,
       email: normalizeEmail(user.email || ''),
-      role: user.role || 'organization'
+      role: user.role || 'organization',
+      password: (user.role || 'organization') === 'admin' ? '' : String(user.password || '')
     }))
   };
 }
@@ -676,6 +759,37 @@ function normalizeState(parsed) {
 function saveState(state) {
   writeSessionUserId(state.currentUserId || null);
   queuePersistSharedState(state);
+}
+
+function refreshReferralCodeConflicts(organizations) {
+  const counts = new Map();
+  (organizations || []).forEach((org) => {
+    const code = sanitizeReferralCode(org?.referralCode || '');
+    if (!code) return;
+    counts.set(code, (counts.get(code) || 0) + 1);
+  });
+
+  (organizations || []).forEach((org) => {
+    const code = sanitizeReferralCode(org?.referralCode || '');
+    org.referralCodeConflict = Boolean(code && (counts.get(code) || 0) > 1);
+  });
+}
+
+function buildReferralCodeConflictRows(organizations) {
+  const byCode = new Map();
+  (organizations || []).forEach((org) => {
+    const code = sanitizeReferralCode(org?.referralCode || '');
+    if (!code) return;
+    if (!byCode.has(code)) {
+      byCode.set(code, []);
+    }
+    byCode.get(code).push(org.name || 'Unnamed organization');
+  });
+
+  return [...byCode.entries()]
+    .filter(([, names]) => names.length > 1)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([code, names]) => ({ code, names }));
 }
 
 async function refreshSharedState(state) {
@@ -773,8 +887,7 @@ function setAuthLink(state) {
   const existingLogout = document.getElementById('globalLogoutButton');
   const currentUser = getCurrentUser(state);
   if (!currentUser) {
-    const pageKey = resolveCurrentPageKey();
-    const loginHref = (MAINTENANCE_MODE && pageKey === 'admin') ? 'login.html?admin=1' : 'login.html';
+    const loginHref = 'login.html';
     links.forEach((link) => {
       link.textContent = 'Login';
       link.href = loginHref;
@@ -799,6 +912,7 @@ function setAuthLink(state) {
     logoutButton.textContent = 'Logout (Sign out)';
     logoutButton.addEventListener('click', () => {
       state.currentUserId = null;
+      clearAdminSessionToken();
       saveState(state);
       window.location.href = 'login.html';
     });
@@ -810,12 +924,7 @@ function setAuthLink(state) {
 
 function requireAuth(state) {
   if (!getCurrentUser(state)) {
-    // Temporary maintenance mode for campaign launch approval.
-    if (MAINTENANCE_MODE && resolveCurrentPageKey() === 'admin') {
-      window.location.replace('login.html?admin=1');
-    } else {
-      window.location.replace('login.html');
-    }
+    window.location.replace('login.html');
     return false;
   }
   document.body.classList.add('auth-ready');
@@ -1382,7 +1491,8 @@ function openMonthModal(state, monthIndex) {
 }
 
 function renderAdmin(state) {
-  state.referralDirectory = normalizeReferralDirectory(state.referralDirectory, state.organizations);
+  state.referralDirectory = normalizeReferralDirectory(state.referralDirectory);
+  refreshReferralCodeConflicts(state.organizations);
   document.getElementById('adminOrgCount').textContent = state.organizations.length;
   document.getElementById('adminReferralCount').textContent = state.organizations.reduce((sum, org) => sum + org.qualifiedReferrals, 0);
   document.getElementById('adminPendingCount').textContent = state.organizations.filter((org) => getVerificationStatus(org) === 'pending').length;
@@ -1676,11 +1786,11 @@ function getSelectedOrganization(state) {
 function getFilteredReferrals(state) {
   const all = [...state.organizations].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
   if (adminReferralFilter === 'all') return all;
-  if (adminReferralFilter === 'awaiting-approval') {
-    return all.filter((org) => getVerificationStatus(org) === 'pending');
+  if (adminReferralFilter === 'awaiting-code') {
+    return all.filter((org) => getVerificationStatus(org) === 'pending' && !org.referralCode);
   }
-  if (adminReferralFilter === 'approved-no-code') {
-    return all.filter((org) => isOrganizationApproved(org) && !org.referralCode);
+  if (adminReferralFilter === 'ready-for-approval') {
+    return all.filter((org) => getVerificationStatus(org) === 'pending' && Boolean(org.referralCode));
   }
   if (adminReferralFilter === 'assigned-code') {
     return all.filter((org) => isOrganizationApproved(org) && Boolean(org.referralCode));
@@ -1722,13 +1832,6 @@ function upsertDirectoryEntry(state, name, code, skipEntryId = null) {
   const entry = { id: nextId, name: cleanName, code: cleanCode };
   state.referralDirectory.push(entry);
   return { ok: true, entry, updated: false };
-}
-
-function syncOrganizationCodeToDirectory(state, organization) {
-  if (!organization?.referralCode) return;
-  const existing = (state.referralDirectory || []).find((entry) => entry.code === organization.referralCode);
-  if (existing) return;
-  upsertDirectoryEntry(state, organization.name, organization.referralCode);
 }
 
 function addOrganizationNotice(organization, message) {
@@ -1784,7 +1887,7 @@ function setOrganizationApproved(organization) {
   organization.rejectionReason = '';
   organization.valid = true;
   organization.compliant = true;
-  addOrganizationNotice(organization, 'Your registration has been approved. Please wait for your referral code assignment email.');
+  addOrganizationNotice(organization, 'Your registration has been approved. You may now sign in using your verified account credentials.');
 }
 
 function setOrganizationRejected(organization, reason) {
@@ -1800,25 +1903,35 @@ function assignReferralCodeToOrganization(state, organization, code) {
   if (!state || !organization) {
     return { ok: false, message: 'Organization not found.' };
   }
-  if (!isOrganizationApproved(organization)) {
-    return { ok: false, message: 'Only approved organizations can receive referral codes.' };
+  const status = getVerificationStatus(organization);
+  if (status === 'rejected') {
+    return { ok: false, message: 'Rejected organizations cannot receive a referral code until reviewed again.' };
   }
   const cleanCode = sanitizeReferralCode(code);
   if (!cleanCode) {
     return { ok: false, message: 'Invalid referral code.' };
   }
 
-  const previousCode = organization.referralCode || '';
-  organization.referralCode = cleanCode;
-  organization.verificationStatus = 'verified';
-  organization.valid = true;
-  organization.compliant = true;
-
-  if (previousCode !== cleanCode) {
-    addOrganizationNotice(organization, `Your referral code is now available: ${cleanCode}. You can start sharing it with your members.`);
+  const codeInUse = (state.organizations || []).find((org) => (
+    org.id !== organization.id
+    && sanitizeReferralCode(org.referralCode || '') === cleanCode
+  ));
+  if (codeInUse) {
+    return { ok: false, message: `Referral code already assigned to ${codeInUse.name}.` };
   }
 
-  syncOrganizationCodeToDirectory(state, organization);
+  const previousCode = organization.referralCode || '';
+  organization.referralCode = cleanCode;
+  refreshReferralCodeConflicts(state.organizations);
+
+  if (previousCode !== cleanCode) {
+    if (status === 'pending') {
+      addOrganizationNotice(organization, `A referral code has been assigned to your registration: ${cleanCode}. Your application is still pending admin approval.`);
+    } else {
+      addOrganizationNotice(organization, `Your referral code is now available: ${cleanCode}. You can start sharing it with your members.`);
+    }
+  }
+
   return {
     ok: true,
     code: cleanCode,
@@ -1865,7 +1978,7 @@ function renderReferralDirectoryManager(state) {
   status.textContent = adminReferralDirectoryStatusMessage;
 
   const pendingOrganizations = state.organizations
-    .filter((org) => isOrganizationApproved(org) && !org.referralCode)
+    .filter((org) => getVerificationStatus(org) === 'pending' && !org.referralCode)
     .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
   pendingOrgSelect.innerHTML = pendingOrganizations.length
     ? pendingOrganizations.map((org) => `<option value="${org.id}">${org.name}</option>`).join('')
@@ -1953,21 +2066,16 @@ function renderReferralDirectoryManager(state) {
 
   assignPendingButton.onclick = () => {
     const orgId = Number(pendingOrgSelect.value || 0);
-    const organization = state.organizations.find((org) => org.id === orgId && isOrganizationApproved(org) && !org.referralCode);
+    const organization = state.organizations.find((org) => org.id === orgId && getVerificationStatus(org) === 'pending' && !org.referralCode);
     if (!organization) {
-      adminReferralDirectoryStatusMessage = 'Select an approved organization that is awaiting code assignment.';
+      adminReferralDirectoryStatusMessage = 'Select an org that is pending approval and awaiting referral code assignment.';
       renderReferralDirectoryManager(state);
       return;
     }
 
     const match = findDirectoryMatch(state.referralDirectory, pendingCodeInput.value || '');
-    if (!match) {
-      adminReferralDirectoryStatusMessage = 'Choose a valid referral directory entry for assignment.';
-      renderReferralDirectoryManager(state);
-      return;
-    }
-
-    const assignment = assignReferralCodeToOrganization(state, organization, match.code);
+    const candidateCode = match?.code || pendingCodeInput.value || '';
+    const assignment = assignReferralCodeToOrganization(state, organization, candidateCode);
     if (!assignment.ok) {
       adminReferralDirectoryStatusMessage = assignment.message;
       renderReferralDirectoryManager(state);
@@ -2018,7 +2126,24 @@ function renderAdminReferralsPanel(state) {
   const toolbar = document.getElementById('adminReferralsToolbar');
   const body = document.getElementById('adminReferralBody');
   const datalist = document.getElementById('referralDirectoryOptions');
+  const conflictBanner = document.getElementById('adminReferralConflictBanner');
   if (!toolbar || !body) return;
+
+  if (conflictBanner) {
+    const conflicts = buildReferralCodeConflictRows(state.organizations);
+    if (conflicts.length) {
+      const details = conflicts
+        .slice(0, 4)
+        .map((item) => `${item.code}: ${item.names.join(', ')}`)
+        .join(' | ');
+      const suffix = conflicts.length > 4 ? ` | +${conflicts.length - 4} more conflict group(s)` : '';
+      conflictBanner.textContent = `Resolve referral code conflicts before approval. ${details}${suffix}`;
+      conflictBanner.classList.remove('hidden');
+    } else {
+      conflictBanner.textContent = '';
+      conflictBanner.classList.add('hidden');
+    }
+  }
 
   if (datalist) {
     const options = [...(state.referralDirectory || [])].sort((a, b) => a.name.localeCompare(b.name));
@@ -2028,13 +2153,13 @@ function renderAdminReferralsPanel(state) {
   }
 
   const allCount = state.organizations.length;
-  const pendingApprovalCount = state.organizations.filter((org) => getVerificationStatus(org) === 'pending').length;
-  const approvedNoCodeCount = state.organizations.filter((org) => isOrganizationApproved(org) && !org.referralCode).length;
+  const awaitingCodeCount = state.organizations.filter((org) => getVerificationStatus(org) === 'pending' && !org.referralCode).length;
+  const readyForApprovalCount = state.organizations.filter((org) => getVerificationStatus(org) === 'pending' && Boolean(org.referralCode)).length;
   const assignedCount = state.organizations.filter((org) => isOrganizationApproved(org) && Boolean(org.referralCode)).length;
   toolbar.innerHTML = `
     <span class="pill">Application and code workflow</span>
-    <button type="button" class="button ghost small" data-filter="awaiting-approval">Awaiting approval (${pendingApprovalCount})</button>
-    <button type="button" class="button ghost small" data-filter="approved-no-code">Approved, no code (${approvedNoCodeCount})</button>
+    <button type="button" class="button ghost small" data-filter="awaiting-code">Pending, no code (${awaitingCodeCount})</button>
+    <button type="button" class="button ghost small" data-filter="ready-for-approval">Ready for approval (${readyForApprovalCount})</button>
     <button type="button" class="button ghost small" data-filter="assigned-code">Assigned code (${assignedCount})</button>
     <button type="button" class="button ghost small" data-filter="all">All (${allCount})</button>
   `;
@@ -2064,12 +2189,16 @@ function renderAdminReferralsPanel(state) {
     const status = getVerificationStatus(org);
     const statusClass = status === 'verified' ? 'approved' : status;
     const statusLabel = getVerificationStatusLabel(org);
-    const canAssignCode = isOrganizationApproved(org);
+    const canAssignCode = status !== 'rejected';
+    const canApprove = status === 'pending' && Boolean(org.referralCode) && !org.referralCodeConflict;
+    const referralCodeLabel = org.referralCode
+      ? (org.referralCodeConflict ? `${org.referralCode} (Conflict)` : org.referralCode)
+      : 'Unassigned';
     return `
     <tr>
       <td><input type="checkbox" class="ref-select" data-org-id="${org.id}" /></td>
       <td>${new Date(org.createdAt || Date.now()).toLocaleString()}</td>
-      <td>${org.referralCode || 'Unassigned'}</td>
+      <td>${referralCodeLabel}</td>
       <td>${org.name}</td>
       <td>${org.email || '-'}</td>
       <td>${profile.contactPerson || '-'}</td>
@@ -2084,7 +2213,7 @@ function renderAdminReferralsPanel(state) {
             <select class="referral-assign-select" data-org-id="${org.id}" ${canAssignCode ? '' : 'disabled'}>${buildReferralDirectorySelectMarkup(state.referralDirectory, org.referralCode)}</select>
           </label>
           <button type="button" class="button ghost small" data-action="assign-code" data-org-id="${org.id}" ${canAssignCode ? '' : 'disabled'}>Assign selected code</button>
-          <button type="button" class="button secondary small" data-action="approve-registration" data-org-id="${org.id}">Approve</button>
+          <button type="button" class="button secondary small" data-action="approve-registration" data-org-id="${org.id}" ${canApprove ? '' : 'disabled'}>Approve</button>
           ${buildDeclineReasonSelectMarkup(org.id)}
           <input type="text" class="decline-other-input" data-decline-other-org-id="${org.id}" placeholder="Type other reason" />
           <button type="button" class="button danger small" data-action="reject-registration" data-org-id="${org.id}">Disapprove</button>
@@ -2114,9 +2243,39 @@ function renderAdminReferralsPanel(state) {
           return;
         }
       } else if (button.dataset.action === 'approve-registration') {
+        if (!organization.referralCode) {
+          window.alert('Assign a referral code before approving this organization.');
+          return;
+        }
+        if (organization.referralCodeConflict) {
+          window.alert('This referral code is duplicated across organizations. Resolve the conflict before approval.');
+          return;
+        }
+
+        let codeExistsInSheet = false;
+        let sheetValidationBypassed = false;
+        try {
+          codeExistsInSheet = await isReferralCodePresentInSheet(organization.referralCode, { forceRefresh: true });
+        } catch (_error) {
+          const overrideConfirmed = await requireAdminPasswordReauth(state, `Google Sheet validation is unavailable for ${organization.referralCode}.`);
+          if (!overrideConfirmed) {
+            return;
+          }
+          sheetValidationBypassed = true;
+          addOrganizationNotice(organization, `Admin override used: approved while Google Sheet validation was unavailable for code ${organization.referralCode}.`);
+        }
+
+        if (!sheetValidationBypassed && !codeExistsInSheet) {
+          const overrideConfirmed = await requireAdminPasswordReauth(state, `Referral code ${organization.referralCode} is not in Google Sheet yet.`);
+          if (!overrideConfirmed) {
+            return;
+          }
+          addOrganizationNotice(organization, `Admin override used: approved before Google Sheet contained code ${organization.referralCode}.`);
+        }
+
         setOrganizationApproved(organization);
         try {
-          await sendApprovalEmail(organization.email, organization.name);
+          await sendApprovalEmail(organization.email, organization.name, organization.referralCode || '');
         } catch (_error) {
           addOrganizationNotice(organization, 'Your registration is approved. Email notification is delayed; please check back for updates.');
         }
@@ -2199,21 +2358,66 @@ async function copyReferrals(state, selectedOnly) {
   }
 }
 
-function handleLogin(state, event) {
+async function requireAdminPasswordReauth(state, reasonText) {
+  const currentUser = getCurrentUser(state);
+  if (!currentUser || currentUser.role !== 'admin') {
+    window.alert('Admin verification is required for this action.');
+    return false;
+  }
+
+  const promptText = reasonText
+    ? `${reasonText}\n\nEnter admin password to continue:`
+    : 'Enter admin password to continue:';
+  const input = window.prompt(promptText);
+  if (input === null) {
+    return false;
+  }
+
+  try {
+    const auth = await verifyAdminCredentials(currentUser.email || ADMIN_EMAIL, input);
+    if (auth?.adminToken && auth?.expiresAt) {
+      writeAdminSessionToken(auth.adminToken, auth.expiresAt);
+    }
+    return true;
+  } catch (_error) {
+    window.alert('Admin password verification failed. Approval override cancelled.');
+    return false;
+  }
+}
+
+async function handleLogin(state, event) {
   event.preventDefault();
   const email = normalizeEmail(document.getElementById('loginEmail').value);
   const password = document.getElementById('loginPassword').value;
   const message = document.getElementById('authMessage');
 
+  let adminAuth = null;
+  let adminAuthErrorMessage = '';
+  try {
+    adminAuth = await verifyAdminCredentials(email, password);
+  } catch (error) {
+    adminAuth = null;
+    adminAuthErrorMessage = error?.message || '';
+  }
+
+  if (adminAuth?.ok) {
+    const adminUser = getOrCreateAdminUser(state, adminAuth.email || email);
+    writeAdminSessionToken(adminAuth.adminToken || '', adminAuth.expiresAt || 0);
+    state.currentUserId = adminUser.id;
+    saveState(state);
+    message.textContent = 'Admin login successful. Redirecting...';
+    setTimeout(() => { window.location.href = 'dashboard.html'; }, 500);
+    return;
+  }
+
   // Temporary maintenance mode for campaign launch approval.
   if (MAINTENANCE_MODE) {
-    const params = new URLSearchParams(window.location.search || '');
-    const isAdminLoginPath = params.get(ADMIN_LOGIN_QUERY_PARAM) === ADMIN_LOGIN_QUERY_VALUE;
-    const isAdminEmail = normalizeEmail(email) === normalizeEmail(ADMIN_EMAIL);
-    if (!isAdminLoginPath || !isAdminEmail) {
+    if (normalizeEmail(email) === normalizeEmail(ADMIN_EMAIL) && adminAuthErrorMessage) {
+      message.textContent = `Admin login failed: ${adminAuthErrorMessage}`;
+    } else {
       message.textContent = 'Login is temporarily unavailable during maintenance.';
-      return;
     }
+    return;
   }
 
   const loginResult = findUserForLogin(state, email, password);
@@ -2224,6 +2428,11 @@ function handleLogin(state, event) {
 
   if (loginResult.repaired) {
     saveState(state);
+  }
+
+  if (loginResult.user.role === 'admin') {
+    message.textContent = 'Use secure admin verification to sign in.';
+    return;
   }
 
   if (loginResult.user.role === 'organization') {
@@ -2250,6 +2459,7 @@ function handleLogin(state, event) {
   }
 
   state.currentUserId = loginResult.user.id;
+  clearAdminSessionToken();
   saveState(state);
   message.textContent = 'Login successful. Redirecting...';
   setTimeout(() => { window.location.href = 'dashboard.html'; }, 500);
@@ -2318,7 +2528,7 @@ async function completeRegistrationAfterTerms(state, message) {
   if (!pendingRegistrationDraft) return;
 
   try {
-    await pushRegistrationToServer(pendingRegistrationDraft.newOrg, pendingRegistrationDraft.newUser);
+    await pushRegistrationToServer(pendingRegistrationDraft.newOrg, pendingRegistrationDraft.newUser, pendingRegistrationToken);
   } catch (error) {
     message.textContent = `Registration could not be saved to the shared server: ${error.message}`;
     return;
@@ -2329,6 +2539,7 @@ async function completeRegistrationAfterTerms(state, message) {
   state.currentUserId = null;
   saveState(state);
   pendingRegistrationDraft = null;
+  pendingRegistrationToken = '';
   closeTermsModal();
   closeEmailVerificationModal();
   message.textContent = 'Email verification complete. Your registration is now pending admin approval.';
@@ -2464,6 +2675,7 @@ async function handleRegister(state, event) {
   };
 
   pendingRegistrationDraft = { newUser, newOrg };
+  pendingRegistrationToken = '';
   message.textContent = 'Please review and accept the Terms and Conditions to continue.';
   openTermsModal();
 }
@@ -2618,7 +2830,11 @@ async function attachPageHandlers() {
   if (page === 'admin') {
     if (!requireAuth(state)) return;
     const currentUser = getCurrentUser(state);
-    if (currentUser?.email !== ADMIN_EMAIL) {
+    if (currentUser?.role !== 'admin' || !readAdminSessionToken()) {
+      if (currentUser?.role === 'admin') {
+        state.currentUserId = null;
+        saveState(state);
+      }
       window.location.replace('dashboard.html');
       return;
     }
@@ -2692,7 +2908,9 @@ async function attachPageHandlers() {
     });
   }
 
-  document.getElementById('loginForm')?.addEventListener('submit', (event) => handleLogin(state, event));
+  document.getElementById('loginForm')?.addEventListener('submit', async (event) => {
+    await handleLogin(state, event);
+  });
   document.getElementById('passwordHelpForm')?.addEventListener('submit', async (event) => handlePasswordHelp(state, event));
   document.getElementById('registerForm')?.addEventListener('submit', async (event) => {
     await handleRegister(state, event);
@@ -2814,6 +3032,11 @@ async function attachPageHandlers() {
       const verification = await verifyEmailCode(email, code);
       if (!verification.verified) {
         status.textContent = verification.message || 'Verification failed. Please try again.';
+        return;
+      }
+      pendingRegistrationToken = String(verification.registrationToken || '').trim();
+      if (!pendingRegistrationToken) {
+        status.textContent = 'Verification succeeded but registration token is missing. Please request a new code.';
         return;
       }
       status.textContent = 'Email verified. Completing registration...';

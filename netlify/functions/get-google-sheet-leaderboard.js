@@ -1,5 +1,6 @@
 const { connectLambda, getStore } = require('@netlify/blobs');
 const { google } = require('googleapis');
+const { requireAdmin } = require('./_admin-auth');
 
 function json(statusCode, body) {
   return {
@@ -86,6 +87,11 @@ exports.handler = async (event) => {
 
     if (event.httpMethod !== 'POST') {
       return json(405, { message: 'Method not allowed.' });
+    }
+
+    const auth = requireAdmin(event);
+    if (!auth.ok) {
+      return json(auth.statusCode || 401, { message: auth.message });
     }
 
     const rows = await readSheetRowsFromGoogle();

@@ -1,3 +1,5 @@
+const { requireAdmin } = require('./_admin-auth');
+
 function json(statusCode, body) {
   return {
     statusCode,
@@ -18,9 +20,15 @@ exports.handler = async (event) => {
       return json(405, { message: 'Method not allowed.' });
     }
 
+    const auth = requireAdmin(event);
+    if (!auth.ok) {
+      return json(auth.statusCode || 401, { message: auth.message });
+    }
+
     const payload = JSON.parse(event.body || '{}');
     const email = String(payload.email || '').trim().toLowerCase();
     const organizationName = String(payload.organizationName || '').trim();
+    const referralCode = String(payload.referralCode || '').trim().toUpperCase();
 
     if (!isValidEmail(email) || !organizationName) {
       return json(400, { message: 'Valid email and organization name are required.' });
@@ -35,7 +43,8 @@ exports.handler = async (event) => {
       `Hello ${organizationName},`,
       '',
       'Your organization registration has been approved.',
-      'You may now sign in to the platform. Your referral code will be assigned by the admin team shortly.',
+      'You may now sign in to the platform.',
+      referralCode ? `Assigned referral code: ${referralCode}` : 'Assigned referral code: Please check your dashboard for the latest update.',
       '',
       'Shopee Campus Challenge Admin'
     ].join('\n');
@@ -55,8 +64,7 @@ exports.handler = async (event) => {
     });
 
     if (!resendResponse.ok) {
-      const failureText = await resendResponse.text();
-      return json(502, { message: `Email provider error: ${failureText}` });
+      return json(502, { message: 'Email provider error. Please try again later.' });
     }
 
     return json(200, { sent: true });

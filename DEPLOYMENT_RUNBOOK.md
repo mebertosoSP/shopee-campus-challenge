@@ -51,7 +51,7 @@ Without access control, anyone with the link can still open it.
 
 1. Confirm placeholder orgs removed
 2. Confirm test data removed
-3. Set Netlify environment variables: `RESEND_API_KEY`, `EMAIL_FROM`
+3. Set Netlify environment variables: `RESEND_API_KEY`, `EMAIL_FROM`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_SESSION_SECRET`
 4. Set Google Sheets environment variables: `GOOGLE_SHEETS_ID`, `GOOGLE_SHEETS_RANGE`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`
 5. Run `npm install` to include Netlify Functions dependency
 6. Take backup snapshot (zip project + git tag)

@@ -74,7 +74,7 @@
           <div class="card-header">
             <h2>Referral code directory manager</h2>
           </div>
-          <p class="muted">Search, add, edit, and delete organization referral codes. Changes are available immediately during application verification.</p>
+          <p class="muted">Search, add, edit, and delete screened organization referral codes. For new pending orgs not in the list yet, you can manually encode the referral code here before approval.</p>
           <div class="referral-directory-layout">
             <div class="referral-directory-browser">
               <label class="referral-directory-search-wrap">
@@ -111,8 +111,8 @@
                 </select>
               </label>
               <label>
-                Referral directory entry
-                <input id="referralPendingCodeInput" type="search" list="referralDirectoryAssignOptions" placeholder="Search org name or code" />
+                Referral code (directory match or manual code)
+                <input id="referralPendingCodeInput" type="search" list="referralDirectoryAssignOptions" placeholder="Search existing code or type a new code" />
               </label>
               <datalist id="referralDirectoryAssignOptions"></datalist>
               <button type="button" class="button secondary small" id="assignPendingReferralCode">Assign to pending organization</button>
@@ -188,8 +188,9 @@
               <button type="button" class="button ghost small" id="copyAllReferrals">Copy all</button>
             </div>
           </div>
-          <p class="muted">Organizations are pending after email verification. Approve or disapprove each application first, then assign referral codes for approved organizations.</p>
+          <p class="muted">Organizations are pending after email verification. Assign a referral code first, then approve or disapprove each application.</p>
           <div id="adminReferralsToolbar" class="admin-toolbar"></div>
+          <div id="adminReferralConflictBanner" class="admin-referral-conflict-banner hidden"></div>
           <datalist id="referralDirectoryOptions"></datalist>
           <div class="table-wrap">
             <table class="leaderboard-table referral-table">

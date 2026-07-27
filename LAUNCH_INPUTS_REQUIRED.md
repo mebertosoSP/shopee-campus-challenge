@@ -30,6 +30,9 @@ Please provide these before we execute final deployment:
 1. Netlify environment variables:
    - `RESEND_API_KEY`
    - `EMAIL_FROM` (example: `ACC Team <no-reply@yourdomain.com>`)
+   - `ADMIN_EMAIL`
+   - `ADMIN_PASSWORD`
+   - `ADMIN_SESSION_SECRET` (long random secret for signing admin session tokens)
    - `GOOGLE_SHEETS_ID`
    - `GOOGLE_SHEETS_RANGE` (example: `Leaderboard!A:C`)
    - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
@@ -47,4 +50,5 @@ Please provide these before we execute final deployment:
 1. Run `npm install`
 2. Deploy to Netlify
 3. Add `RESEND_API_KEY` and `EMAIL_FROM` in Netlify Project Settings > Environment Variables
-4. Add `GOOGLE_SHEETS_ID`, `GOOGLE_SHEETS_RANGE`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, and `GOOGLE_PRIVATE_KEY` in Netlify Project Settings > Environment Variables
+4. Add `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `ADMIN_SESSION_SECRET` in Netlify Project Settings > Environment Variables
+5. Add `GOOGLE_SHEETS_ID`, `GOOGLE_SHEETS_RANGE`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, and `GOOGLE_PRIVATE_KEY` in Netlify Project Settings > Environment Variables

@@ -622,6 +622,19 @@ h3 { margin: 0 0 8px; }
   gap: 8px;
   margin: 10px 0;
 }
+.admin-referral-conflict-banner {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  border-radius: 10px;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.admin-referral-conflict-banner.hidden {
+  display: none;
+}
 .button.small { padding: 7px 12px; font-size: 0.86rem; }
 .button-group-inline { display: inline-flex; gap: 8px; }
 .table-wrap { overflow-x: auto; }

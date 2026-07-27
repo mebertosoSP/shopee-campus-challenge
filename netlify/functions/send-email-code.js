@@ -1,4 +1,5 @@
 const { connectLambda, getStore } = require('@netlify/blobs');
+const { consumeLimit, getClientIp } = require('./_rate-limit');
 
 function json(statusCode, body) {
   return {
@@ -27,6 +28,16 @@ exports.handler = async (event) => {
 
     if (!isValidEmail(email)) {
       return json(400, { message: 'Please provide a valid email address.' });
+    }
+
+    const ip = getClientIp(event);
+    const byIp = await consumeLimit(`otp-send:ip:${ip}`, 20, 10 * 60 * 1000);
+    if (!byIp.allowed) {
+      return json(429, { message: 'Too many verification requests. Please try again later.' });
+    }
+    const byEmail = await consumeLimit(`otp-send:email:${email}`, 5, 10 * 60 * 1000);
+    if (!byEmail.allowed) {
+      return json(429, { message: 'Verification code request limit reached for this email. Please wait before retrying.' });
     }
 
     if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
@@ -60,8 +71,7 @@ exports.handler = async (event) => {
     });
 
     if (!resendResponse.ok) {
-      const failureText = await resendResponse.text();
-      return json(502, { message: `Email provider error: ${failureText}` });
+      return json(502, { message: 'Email provider error. Please try again later.' });
     }
 
     return json(200, { sent: true });

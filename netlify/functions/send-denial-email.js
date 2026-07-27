@@ -1,3 +1,5 @@
+const { requireAdmin } = require('./_admin-auth');
+
 function json(statusCode, body) {
   return {
     statusCode,
@@ -16,6 +18,11 @@ exports.handler = async (event) => {
   try {
     if (event.httpMethod !== 'POST') {
       return json(405, { message: 'Method not allowed.' });
+    }
+
+    const auth = requireAdmin(event);
+    if (!auth.ok) {
+      return json(auth.statusCode || 401, { message: auth.message });
     }
 
     const payload = JSON.parse(event.body || '{}');
@@ -58,8 +65,7 @@ exports.handler = async (event) => {
     });
 
     if (!resendResponse.ok) {
-      const failureText = await resendResponse.text();
-      return json(502, { message: `Email provider error: ${failureText}` });
+      return json(502, { message: 'Email provider error. Please try again later.' });
     }
 
     return json(200, { sent: true });
