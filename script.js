@@ -31,15 +31,13 @@ const ADMIN_LOGIN_QUERY_PARAM = 'admin';
 const ADMIN_LOGIN_QUERY_VALUE = '1';
 let saveStateTimer = null;
 const DECLINE_REASONS = [
-  'Acronym is not appropriate.',
-  'Email is invalid.',
-  'Incomplete details.',
-  'Organization not found.',
-  'Screenshot does not capture ShopeePay details and username.',
-  'ShopeePay is not verified.',
-  'University not found.',
-  'Other.'
+  'Proof of ShopeePay is insufficient. Please upload another screenshot of your verified ShopeePay.',
+  'The submitted organization could not be validated as a legitimate student organization.',
+  'The student organization registration has missing details.',
+  'The student organization has submitted a duplicate entry.',
+  'Other reason (please specify).'
 ];
+const DECLINE_REASON_OTHER = 'Other reason (please specify).';
 
 function sanitizeReferralCode(code) {
   return (code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
@@ -196,6 +194,40 @@ function normalizeEmail(email) {
   return (email || '').trim().toLowerCase();
 }
 
+function hasOuterWhitespace(value) {
+  const text = String(value ?? '');
+  return text !== text.trim();
+}
+
+function findUserForLogin(state, email, password) {
+  const normalizedEmail = normalizeEmail(email);
+  const exactMatch = (state.users || []).find((entry) => normalizeEmail(entry.email) === normalizedEmail && entry.password === password);
+  if (exactMatch) {
+    return { user: exactMatch, repaired: false };
+  }
+
+  const trimmedInputPassword = String(password ?? '').trim();
+  if (!trimmedInputPassword) {
+    return { user: null, repaired: false };
+  }
+
+  const trimmedInputMatch = (state.users || []).find((entry) => normalizeEmail(entry.email) === normalizedEmail && entry.password === trimmedInputPassword);
+  if (trimmedInputMatch) {
+    return { user: trimmedInputMatch, repaired: false };
+  }
+
+  const legacyWhitespaceMatch = (state.users || []).find((entry) => (
+    normalizeEmail(entry.email) === normalizedEmail
+    && String(entry.password || '').trim() === trimmedInputPassword
+  ));
+  if (legacyWhitespaceMatch) {
+    legacyWhitespaceMatch.password = trimmedInputPassword;
+    return { user: legacyWhitespaceMatch, repaired: true };
+  }
+
+  return { user: null, repaired: false };
+}
+
 async function callBackend(functionName, payload = {}) {
   const response = await fetch(`${FUNCTIONS_BASE}/${functionName}`, {
     method: 'POST',
@@ -272,6 +304,13 @@ async function sendDenialEmail(email, organizationName, reason) {
     email,
     organizationName,
     reason
+  });
+}
+
+async function sendApprovalEmail(email, organizationName) {
+  return callBackend('send-approval-email', {
+    email,
+    organizationName
   });
 }
 
@@ -540,10 +579,15 @@ async function loadStateFromServer() {
 function normalizeState(parsed) {
   const organizations = (parsed.organizations || DEFAULT_ORGANIZATIONS).map((org) => {
     const rawStatus = String(org.verificationStatus || '').toLowerCase();
-    const normalizedStatus = rawStatus === 'rejected' ? 'rejected' : 'verified';
+    const normalizedStatus = rawStatus === 'rejected'
+      ? 'rejected'
+      : rawStatus === 'pending'
+        ? 'pending'
+        : 'verified';
     const isVerified = normalizedStatus === 'verified';
     return {
       ...org,
+      email: normalizeEmail(org.email || ''),
       acronym: (org.acronym || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6),
       isPlaceholder: typeof org.isPlaceholder === 'boolean' ? org.isPlaceholder : !org.createdAt,
       verificationStatus: normalizedStatus,
@@ -623,6 +667,7 @@ function normalizeState(parsed) {
     }),
     users: (parsed.users || []).map((user) => ({
       ...user,
+      email: normalizeEmail(user.email || ''),
       role: user.role || 'organization'
     }))
   };
@@ -696,6 +741,10 @@ function handleAdminPasswordResetSubmit(state, event) {
   const confirmPassword = confirmInput.value;
   if (nextPassword !== confirmPassword) {
     status.textContent = 'New password and confirmation do not match.';
+    return;
+  }
+  if (hasOuterWhitespace(nextPassword)) {
+    status.textContent = 'Password cannot start or end with spaces.';
     return;
   }
   if (!isPasswordComplex(nextPassword)) {
@@ -1176,11 +1225,14 @@ function renderDashboard(state) {
     roadshowNode.classList.toggle('metric-value-success', roadshow.eligible);
     roadshowNode.classList.toggle('metric-value-warn', !roadshow.eligible);
   }
-  document.getElementById('verificationStatus').textContent = organization.verificationStatus === 'rejected'
-    ? `Verification issue: ${organization.rejectionReason || 'Please contact admin.'}`
-    : organization.referralCode
-      ? 'Email verified and referral code assigned'
-      : 'Email verified. Referral code assignment is in progress';
+  const verificationStatus = getVerificationStatus(organization);
+  document.getElementById('verificationStatus').textContent = verificationStatus === 'rejected'
+    ? `Application not approved: ${organization.rejectionReason || 'Please contact admin.'}`
+    : verificationStatus === 'pending'
+      ? 'Email verified. Your registration is pending admin approval. You will receive an email once the review is complete.'
+      : organization.referralCode
+        ? 'Registration approved and referral code assigned'
+        : 'Registration approved. Referral code assignment is in progress';
   const progressMeta = getProgressTier(organization.qualifiedReferrals);
   const progressFill = document.getElementById('progressFill');
   progressFill.style.width = `${Math.min(100, Math.round((organization.qualifiedReferrals / 250) * 100))}%`;
@@ -1201,7 +1253,12 @@ function renderDashboard(state) {
 
   const referralCodeNode = document.getElementById('orgReferralCode');
   if (referralCodeNode) {
-    referralCodeNode.textContent = organization.referralCode || 'Your email is verified. Please wait while the admin team assigns your referral code.';
+    referralCodeNode.textContent = organization.referralCode
+      || (verificationStatus === 'pending'
+        ? 'Registration is pending admin approval.'
+        : verificationStatus === 'rejected'
+          ? 'Registration is not approved. Please review the reason above or contact admin.'
+          : 'Registration approved. Please wait while the admin team assigns your referral code.');
     referralCodeNode.classList.toggle('referral-code-pending-copy', !organization.referralCode);
   }
 
@@ -1328,7 +1385,7 @@ function renderAdmin(state) {
   state.referralDirectory = normalizeReferralDirectory(state.referralDirectory, state.organizations);
   document.getElementById('adminOrgCount').textContent = state.organizations.length;
   document.getElementById('adminReferralCount').textContent = state.organizations.reduce((sum, org) => sum + org.qualifiedReferrals, 0);
-  document.getElementById('adminPendingCount').textContent = state.organizations.filter((org) => !org.referralCode).length;
+  document.getElementById('adminPendingCount').textContent = state.organizations.filter((org) => getVerificationStatus(org) === 'pending').length;
 
   const monthlyStats = document.getElementById('monthlyStats');
   if (monthlyStats) {
@@ -1619,10 +1676,16 @@ function getSelectedOrganization(state) {
 function getFilteredReferrals(state) {
   const all = [...state.organizations].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
   if (adminReferralFilter === 'all') return all;
-  if (adminReferralFilter === 'assigned-code') {
-    return all.filter((org) => Boolean(org.referralCode));
+  if (adminReferralFilter === 'awaiting-approval') {
+    return all.filter((org) => getVerificationStatus(org) === 'pending');
   }
-  return all.filter((org) => !org.referralCode);
+  if (adminReferralFilter === 'approved-no-code') {
+    return all.filter((org) => isOrganizationApproved(org) && !org.referralCode);
+  }
+  if (adminReferralFilter === 'assigned-code') {
+    return all.filter((org) => isOrganizationApproved(org) && Boolean(org.referralCode));
+  }
+  return all;
 }
 
 function upsertDirectoryEntry(state, name, code, skipEntryId = null) {
@@ -1681,9 +1744,64 @@ function addOrganizationNotice(organization, message) {
   organization.notifications = organization.notifications.slice(0, 12);
 }
 
+function getVerificationStatus(org) {
+  const raw = String(org?.verificationStatus || '').toLowerCase();
+  if (raw === 'rejected') return 'rejected';
+  if (raw === 'pending') return 'pending';
+  return 'verified';
+}
+
+function isOrganizationApproved(org) {
+  return getVerificationStatus(org) === 'verified';
+}
+
+function getVerificationStatusLabel(org) {
+  const status = getVerificationStatus(org);
+  if (status === 'rejected') return 'Rejected';
+  if (status === 'pending') return 'Pending Approval';
+  return 'Approved';
+}
+
+function buildDeclineReasonSelectMarkup(orgId) {
+  const options = DECLINE_REASONS
+    .map((reason) => `<option value="${reason}">${reason}</option>`)
+    .join('');
+  return `<select class="decline-reason-select" data-decline-reason-org-id="${orgId}">${options}</select>`;
+}
+
+function showStatusModal(title, message) {
+  const modal = document.getElementById('statusGateModal');
+  const titleNode = document.getElementById('statusGateTitle');
+  const messageNode = document.getElementById('statusGateMessage');
+  if (!modal || !titleNode || !messageNode) return;
+  titleNode.textContent = title;
+  messageNode.textContent = message;
+  modal.classList.remove('hidden');
+}
+
+function setOrganizationApproved(organization) {
+  organization.verificationStatus = 'verified';
+  organization.rejectionReason = '';
+  organization.valid = true;
+  organization.compliant = true;
+  addOrganizationNotice(organization, 'Your registration has been approved. Please wait for your referral code assignment email.');
+}
+
+function setOrganizationRejected(organization, reason) {
+  organization.verificationStatus = 'rejected';
+  organization.rejectionReason = reason;
+  organization.valid = false;
+  organization.compliant = false;
+  organization.referralCode = '';
+  addOrganizationNotice(organization, `Your registration was not approved. Reason: ${reason}`);
+}
+
 function assignReferralCodeToOrganization(state, organization, code) {
   if (!state || !organization) {
     return { ok: false, message: 'Organization not found.' };
+  }
+  if (!isOrganizationApproved(organization)) {
+    return { ok: false, message: 'Only approved organizations can receive referral codes.' };
   }
   const cleanCode = sanitizeReferralCode(code);
   if (!cleanCode) {
@@ -1747,7 +1865,7 @@ function renderReferralDirectoryManager(state) {
   status.textContent = adminReferralDirectoryStatusMessage;
 
   const pendingOrganizations = state.organizations
-    .filter((org) => !org.referralCode)
+    .filter((org) => isOrganizationApproved(org) && !org.referralCode)
     .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
   pendingOrgSelect.innerHTML = pendingOrganizations.length
     ? pendingOrganizations.map((org) => `<option value="${org.id}">${org.name}</option>`).join('')
@@ -1835,9 +1953,9 @@ function renderReferralDirectoryManager(state) {
 
   assignPendingButton.onclick = () => {
     const orgId = Number(pendingOrgSelect.value || 0);
-    const organization = state.organizations.find((org) => org.id === orgId && !org.referralCode);
+    const organization = state.organizations.find((org) => org.id === orgId && isOrganizationApproved(org) && !org.referralCode);
     if (!organization) {
-      adminReferralDirectoryStatusMessage = 'Select a pending organization first.';
+      adminReferralDirectoryStatusMessage = 'Select an approved organization that is awaiting code assignment.';
       renderReferralDirectoryManager(state);
       return;
     }
@@ -1910,11 +2028,13 @@ function renderAdminReferralsPanel(state) {
   }
 
   const allCount = state.organizations.length;
-  const pendingCount = state.organizations.filter((org) => !org.referralCode).length;
-  const assignedCount = state.organizations.filter((org) => Boolean(org.referralCode)).length;
+  const pendingApprovalCount = state.organizations.filter((org) => getVerificationStatus(org) === 'pending').length;
+  const approvedNoCodeCount = state.organizations.filter((org) => isOrganizationApproved(org) && !org.referralCode).length;
+  const assignedCount = state.organizations.filter((org) => isOrganizationApproved(org) && Boolean(org.referralCode)).length;
   toolbar.innerHTML = `
-    <span class="pill">Referral code assignment queue</span>
-    <button type="button" class="button ghost small" data-filter="awaiting-code">Awaiting code (${pendingCount})</button>
+    <span class="pill">Application and code workflow</span>
+    <button type="button" class="button ghost small" data-filter="awaiting-approval">Awaiting approval (${pendingApprovalCount})</button>
+    <button type="button" class="button ghost small" data-filter="approved-no-code">Approved, no code (${approvedNoCodeCount})</button>
     <button type="button" class="button ghost small" data-filter="assigned-code">Assigned code (${assignedCount})</button>
     <button type="button" class="button ghost small" data-filter="all">All (${allCount})</button>
   `;
@@ -1941,7 +2061,10 @@ function renderAdminReferralsPanel(state) {
     const payShot = profile.shopeePayScreenshotData
       ? `<a href="${profile.shopeePayScreenshotData}" target="_blank" rel="noreferrer">View</a>`
       : (profile.shopeePayScreenshotName || '-');
-    const status = org.referralCode ? 'approved' : 'pending';
+    const status = getVerificationStatus(org);
+    const statusClass = status === 'verified' ? 'approved' : status;
+    const statusLabel = getVerificationStatusLabel(org);
+    const canAssignCode = isOrganizationApproved(org);
     return `
     <tr>
       <td><input type="checkbox" class="ref-select" data-org-id="${org.id}" /></td>
@@ -1954,13 +2077,17 @@ function renderAdminReferralsPanel(state) {
       <td>${profile.contactNumber || '-'}</td>
       <td>${profile.shopeeUsername || '-'}</td>
       <td>${payShot}</td>
-      <td><span class="referral-status-pill ${status}">${org.referralCode ? 'code assigned' : 'awaiting code'}</span></td>
+      <td><span class="referral-status-pill ${statusClass}">${statusLabel}</span></td>
       <td>
         <div class="admin-action-stack">
           <label class="assign-code-wrap">
-            <select class="referral-assign-select" data-org-id="${org.id}">${buildReferralDirectorySelectMarkup(state.referralDirectory, org.referralCode)}</select>
+            <select class="referral-assign-select" data-org-id="${org.id}" ${canAssignCode ? '' : 'disabled'}>${buildReferralDirectorySelectMarkup(state.referralDirectory, org.referralCode)}</select>
           </label>
-          <button type="button" class="button ghost small" data-action="assign-code" data-org-id="${org.id}">Assign selected code</button>
+          <button type="button" class="button ghost small" data-action="assign-code" data-org-id="${org.id}" ${canAssignCode ? '' : 'disabled'}>Assign selected code</button>
+          <button type="button" class="button secondary small" data-action="approve-registration" data-org-id="${org.id}">Approve</button>
+          ${buildDeclineReasonSelectMarkup(org.id)}
+          <input type="text" class="decline-other-input" data-decline-other-org-id="${org.id}" placeholder="Type other reason" />
+          <button type="button" class="button danger small" data-action="reject-registration" data-org-id="${org.id}">Disapprove</button>
           <button type="button" class="button ghost small" data-action="reset-password" data-org-id="${org.id}">Reset password</button>
           <button type="button" class="button ghost small danger" data-action="delete" data-org-id="${org.id}">Delete</button>
         </div>
@@ -1985,6 +2112,29 @@ function renderAdminReferralsPanel(state) {
         if (!assignment.ok) {
           window.alert(assignment.message || 'Unable to assign code right now.');
           return;
+        }
+      } else if (button.dataset.action === 'approve-registration') {
+        setOrganizationApproved(organization);
+        try {
+          await sendApprovalEmail(organization.email, organization.name);
+        } catch (_error) {
+          addOrganizationNotice(organization, 'Your registration is approved. Email notification is delayed; please check back for updates.');
+        }
+      } else if (button.dataset.action === 'reject-registration') {
+        const reasonSelect = body.querySelector(`.decline-reason-select[data-decline-reason-org-id="${orgId}"]`);
+        const otherReasonInput = body.querySelector(`.decline-other-input[data-decline-other-org-id="${orgId}"]`);
+        const selectedReason = String(reasonSelect?.value || '').trim();
+        const otherReason = String(otherReasonInput?.value || '').trim();
+        const finalReason = selectedReason === DECLINE_REASON_OTHER ? otherReason : selectedReason;
+        if (!finalReason) {
+          window.alert('Please provide a disapproval reason.');
+          return;
+        }
+        setOrganizationRejected(organization, finalReason);
+        try {
+          await sendDenialEmail(organization.email, organization.name, finalReason);
+        } catch (_error) {
+          addOrganizationNotice(organization, 'Your registration is not approved. Email notification is delayed; please check back for updates.');
         }
       } else if (button.dataset.action === 'reset-password') {
         openAdminPasswordResetModal(state, orgId);
@@ -2027,7 +2177,7 @@ async function copyReferrals(state, selectedOnly) {
     return;
   }
 
-  const header = ['Created', 'Referral', 'Organization Name', 'Organization Email', 'Contact Person', 'Position', 'Contact Number', 'Shopee Username', 'Status'];
+  const header = ['Created', 'Referral', 'Organization Name', 'Organization Email', 'Contact Person', 'Position', 'Contact Number', 'Shopee Username', 'Verification Status'];
   const lines = rows.map((row) => [
     new Date(row.createdAt || Date.now()).toLocaleString(),
     row.referralCode || '-',
@@ -2037,7 +2187,7 @@ async function copyReferrals(state, selectedOnly) {
     row.profile?.contactPosition || '-',
     row.profile?.contactNumber || '-',
     row.profile?.shopeeUsername || '-',
-    row.referralCode ? 'code assigned' : 'awaiting code'
+    getVerificationStatusLabel(row)
   ].join('\t'));
   const output = [header.join('\t'), ...lines].join('\n');
 
@@ -2051,7 +2201,7 @@ async function copyReferrals(state, selectedOnly) {
 
 function handleLogin(state, event) {
   event.preventDefault();
-  const email = document.getElementById('loginEmail').value.trim();
+  const email = normalizeEmail(document.getElementById('loginEmail').value);
   const password = document.getElementById('loginPassword').value;
   const message = document.getElementById('authMessage');
 
@@ -2066,13 +2216,40 @@ function handleLogin(state, event) {
     }
   }
 
-  const user = state.users.find((entry) => entry.email === email && entry.password === password);
-  if (!user) {
+  const loginResult = findUserForLogin(state, email, password);
+  if (!loginResult.user) {
     message.textContent = 'Incorrect email or password.';
     return;
   }
 
-  state.currentUserId = user.id;
+  if (loginResult.repaired) {
+    saveState(state);
+  }
+
+  if (loginResult.user.role === 'organization') {
+    const organization = state.organizations.find((org) => org.id === loginResult.user.organizationId);
+    const verificationStatus = getVerificationStatus(organization);
+    if (verificationStatus === 'pending') {
+      showStatusModal(
+        'Registration Pending Approval',
+        'Your email is verified and your registration is under admin review. Please wait for the approval email before signing in.'
+      );
+      message.textContent = 'Registration pending admin approval.';
+      return;
+    }
+    if (verificationStatus === 'rejected') {
+      showStatusModal(
+        'Registration Not Approved',
+        organization?.rejectionReason
+          ? `Reason: ${organization.rejectionReason}`
+          : 'Your registration is not approved yet. Please contact the admin team for guidance.'
+      );
+      message.textContent = 'Registration is not approved.';
+      return;
+    }
+  }
+
+  state.currentUserId = loginResult.user.id;
   saveState(state);
   message.textContent = 'Login successful. Redirecting...';
   setTimeout(() => { window.location.href = 'dashboard.html'; }, 500);
@@ -2154,7 +2331,7 @@ async function completeRegistrationAfterTerms(state, message) {
   pendingRegistrationDraft = null;
   closeTermsModal();
   closeEmailVerificationModal();
-  message.textContent = 'Registration complete. You can now log in.';
+  message.textContent = 'Email verification complete. Your registration is now pending admin approval.';
   showRegisterSubmittedModal();
 }
 
@@ -2162,7 +2339,7 @@ async function handleRegister(state, event) {
   event.preventDefault();
   const orgName = document.getElementById('registerName').value.trim();
   const acronym = document.getElementById('registerAcronym').value.trim().toUpperCase();
-  const email = document.getElementById('registerEmail').value.trim();
+  const email = normalizeEmail(document.getElementById('registerEmail').value);
   const contactPerson = document.getElementById('registerContactPerson').value.trim();
   const contactPosition = document.getElementById('registerContactPosition').value.trim();
   const contactNumber = document.getElementById('registerContactNumber').value.trim();
@@ -2189,12 +2366,17 @@ async function handleRegister(state, event) {
     return;
   }
 
+  if (hasOuterWhitespace(password)) {
+    message.textContent = 'Password cannot start or end with spaces.';
+    return;
+  }
+
   if (!isPasswordComplex(password)) {
     message.textContent = 'Password must include at least one uppercase letter, one lowercase letter, and one number.';
     return;
   }
 
-  const emailExists = state.users.some((user) => user.email.toLowerCase() === email.toLowerCase());
+  const emailExists = state.users.some((user) => normalizeEmail(user.email) === email);
   if (emailExists) {
     message.textContent = 'This email is already registered.';
     return;
@@ -2257,11 +2439,17 @@ async function handleRegister(state, event) {
     university,
     qualifiedReferrals: 0,
     weeklyReferrals: 0,
-    valid: true,
-    compliant: true,
-    verificationStatus: 'verified',
+    valid: false,
+    compliant: false,
+    verificationStatus: 'pending',
     inquiries: [],
-    notifications: [],
+    notifications: [
+      {
+        id: Date.now(),
+        message: 'Your email is verified and your registration is now pending admin approval.',
+        createdAt: new Date().toISOString()
+      }
+    ],
     referralCode: '',
     trend: buildTrend(0),
     referrals: [],
@@ -2359,6 +2547,11 @@ function handleChangePassword(state, event) {
 
   if (newPassword !== confirmNewPassword) {
     status.textContent = 'New password and confirmation do not match.';
+    return;
+  }
+
+  if (hasOuterWhitespace(newPassword)) {
+    status.textContent = 'New password cannot start or end with spaces.';
     return;
   }
 
@@ -2627,6 +2820,16 @@ async function attachPageHandlers() {
       await completeRegistrationAfterTerms(state, message);
     } catch (error) {
       status.textContent = `Verification error: ${error.message}`;
+    }
+  });
+
+  document.getElementById('statusGateCloseBtn')?.addEventListener('click', () => {
+    document.getElementById('statusGateModal')?.classList.add('hidden');
+  });
+
+  document.getElementById('statusGateModal')?.addEventListener('click', (event) => {
+    if (event.target?.id === 'statusGateModal') {
+      document.getElementById('statusGateModal')?.classList.add('hidden');
     }
   });
 }
