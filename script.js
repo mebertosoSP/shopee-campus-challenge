@@ -14,10 +14,21 @@ let adminReferralDirectoryStatusMessage = '';
 let pendingRegistrationDraft = null;
 let adminSyncTimer = null;
 let adminSheetWindowTimer = null;
+let adminSheetAutoSyncTimer = null;
+let googleSheetSyncInProgress = false;
 const CAMPAIGN_END_ISO = '2026-10-03T23:59:59';
 const REFERRAL_DIRECTORY_PAGE_SIZE = 8;
 const FUNCTIONS_BASE = '/.netlify/functions';
 const ROADSHOW_MAX_RANK = 11;
+const GOOGLE_SHEET_AUTO_SYNC_INTERVAL_MS = 15 * 60 * 1000;
+// Temporary maintenance mode for campaign launch approval.
+const MAINTENANCE_MODE = true;
+// Temporary maintenance mode for campaign launch approval.
+const MAINTENANCE_BLOCKED_PAGES = new Set(['acc', 'dashboard', 'leaderboard', 'login', 'register']);
+// Temporary maintenance mode for campaign launch approval.
+const ADMIN_LOGIN_QUERY_PARAM = 'admin';
+// Temporary maintenance mode for campaign launch approval.
+const ADMIN_LOGIN_QUERY_VALUE = '1';
 let saveStateTimer = null;
 const DECLINE_REASONS = [
   'Acronym is not appropriate.',
@@ -333,9 +344,20 @@ async function refreshGoogleSheetWindow() {
   }
 }
 
-async function handleGoogleSheetSyncNow(state) {
+async function handleGoogleSheetSyncNow(state, options = {}) {
   const status = document.getElementById('googleSheetStatus');
-  if (status) {
+  const isAuto = options.mode === 'auto';
+
+  if (googleSheetSyncInProgress) {
+    if (status && !isAuto) {
+      status.textContent = 'Sync already in progress. Please wait.';
+    }
+    return;
+  }
+
+  googleSheetSyncInProgress = true;
+
+  if (status && !isAuto) {
     status.textContent = 'Syncing Google Sheet tallies to leaderboard...';
   }
 
@@ -345,12 +367,14 @@ async function handleGoogleSheetSyncNow(state) {
     renderAdmin(state);
     await refreshGoogleSheetWindow();
     if (status) {
-      status.textContent = `Sync complete: ${Number(result.updatedOrganizations || 0)} organization(s) updated from ${Number(result.totalSheetRows || 0)} sheet row(s).`;
+      status.textContent = `${isAuto ? 'Auto sync' : 'Sync'} complete: ${Number(result.updatedOrganizations || 0)} organization(s) updated from ${Number(result.totalSheetRows || 0)} sheet row(s).`;
     }
   } catch (error) {
     if (status) {
-      status.textContent = `Sync failed: ${error.message}`;
+      status.textContent = `${isAuto ? 'Auto sync' : 'Sync'} failed: ${error.message}`;
     }
+  } finally {
+    googleSheetSyncInProgress = false;
   }
 }
 
@@ -378,6 +402,40 @@ function writeSessionUserId(userId) {
   } else {
     window.sessionStorage.removeItem(SESSION_USER_KEY);
   }
+}
+
+// Temporary maintenance mode for campaign launch approval.
+function resolveCurrentPageKey() {
+  const explicitPage = (document.body?.dataset?.page || '').trim().toLowerCase();
+  if (explicitPage) return explicitPage;
+  const path = (window.location.pathname || '').split('/').pop() || 'index.html';
+  return path.replace(/\.html$/i, '').toLowerCase();
+}
+
+// Temporary maintenance mode for campaign launch approval.
+function isAdminMaintenanceBypass(state, pageKey) {
+  const currentUser = getCurrentUser(state);
+  if (normalizeEmail(currentUser?.email) === normalizeEmail(ADMIN_EMAIL)) {
+    return true;
+  }
+  if (pageKey === 'admin') {
+    return true;
+  }
+  if (pageKey === 'login') {
+    const params = new URLSearchParams(window.location.search || '');
+    return params.get(ADMIN_LOGIN_QUERY_PARAM) === ADMIN_LOGIN_QUERY_VALUE;
+  }
+  return false;
+}
+
+// Temporary maintenance mode for campaign launch approval.
+function enforceMaintenanceMode(state) {
+  if (!MAINTENANCE_MODE) return false;
+  const pageKey = resolveCurrentPageKey();
+  if (!MAINTENANCE_BLOCKED_PAGES.has(pageKey)) return false;
+  if (isAdminMaintenanceBypass(state, pageKey)) return false;
+  window.location.replace('index.html');
+  return true;
 }
 
 function extractSharedState(state) {
@@ -666,9 +724,11 @@ function setAuthLink(state) {
   const existingLogout = document.getElementById('globalLogoutButton');
   const currentUser = getCurrentUser(state);
   if (!currentUser) {
+    const pageKey = resolveCurrentPageKey();
+    const loginHref = (MAINTENANCE_MODE && pageKey === 'admin') ? 'login.html?admin=1' : 'login.html';
     links.forEach((link) => {
       link.textContent = 'Login';
-      link.href = 'login.html';
+      link.href = loginHref;
     });
     if (existingLogout) {
       existingLogout.remove();
@@ -701,7 +761,12 @@ function setAuthLink(state) {
 
 function requireAuth(state) {
   if (!getCurrentUser(state)) {
-    window.location.replace('login.html');
+    // Temporary maintenance mode for campaign launch approval.
+    if (MAINTENANCE_MODE && resolveCurrentPageKey() === 'admin') {
+      window.location.replace('login.html?admin=1');
+    } else {
+      window.location.replace('login.html');
+    }
     return false;
   }
   document.body.classList.add('auth-ready');
@@ -1990,6 +2055,17 @@ function handleLogin(state, event) {
   const password = document.getElementById('loginPassword').value;
   const message = document.getElementById('authMessage');
 
+  // Temporary maintenance mode for campaign launch approval.
+  if (MAINTENANCE_MODE) {
+    const params = new URLSearchParams(window.location.search || '');
+    const isAdminLoginPath = params.get(ADMIN_LOGIN_QUERY_PARAM) === ADMIN_LOGIN_QUERY_VALUE;
+    const isAdminEmail = normalizeEmail(email) === normalizeEmail(ADMIN_EMAIL);
+    if (!isAdminLoginPath || !isAdminEmail) {
+      message.textContent = 'Login is temporarily unavailable during maintenance.';
+      return;
+    }
+  }
+
   const user = state.users.find((entry) => entry.email === email && entry.password === password);
   if (!user) {
     message.textContent = 'Incorrect email or password.';
@@ -2326,6 +2402,10 @@ function handlePurgePlaceholderOrganizations(state) {
 
 async function attachPageHandlers() {
   const state = await loadStateFromServer();
+
+  // Temporary maintenance mode for campaign launch approval.
+  if (enforceMaintenanceMode(state)) return;
+
   setAuthLink(state);
   renderCampaignCountdown();
 
@@ -2376,6 +2456,12 @@ async function attachPageHandlers() {
     adminSheetWindowTimer = window.setInterval(() => {
       refreshGoogleSheetWindow();
     }, 60000);
+    if (adminSheetAutoSyncTimer) {
+      window.clearInterval(adminSheetAutoSyncTimer);
+    }
+    adminSheetAutoSyncTimer = window.setInterval(async () => {
+      await handleGoogleSheetSyncNow(state, { mode: 'auto' });
+    }, GOOGLE_SHEET_AUTO_SYNC_INTERVAL_MS);
     window.addEventListener('beforeunload', () => {
       if (adminSyncTimer) {
         window.clearInterval(adminSyncTimer);
@@ -2384,6 +2470,10 @@ async function attachPageHandlers() {
       if (adminSheetWindowTimer) {
         window.clearInterval(adminSheetWindowTimer);
         adminSheetWindowTimer = null;
+      }
+      if (adminSheetAutoSyncTimer) {
+        window.clearInterval(adminSheetAutoSyncTimer);
+        adminSheetAutoSyncTimer = null;
       }
     });
     document.getElementById('googleSheetRefreshBtn')?.addEventListener('click', () => {

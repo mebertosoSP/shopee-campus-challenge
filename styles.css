@@ -273,6 +273,67 @@ h3 { margin: 0 0 8px; }
 @media (max-width: 860px) {
   .hero { grid-template-columns: 1fr; }
 }
+
+/* Temporary maintenance mode for campaign launch approval. */
+.maintenance-shell {
+  min-height: calc(100vh - 180px);
+  display: grid;
+  align-items: center;
+  padding: 48px 0 56px;
+}
+
+/* Temporary maintenance mode for campaign launch approval. */
+.maintenance-card {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: clamp(28px, 5vw, 44px);
+  border: 1px solid #111111;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 85% 12%, rgba(0, 83, 222, 0.1), transparent 42%),
+    radial-gradient(circle at 12% 100%, rgba(238, 77, 45, 0.12), transparent 46%),
+    #ffffff;
+  box-shadow: var(--shadow);
+}
+
+/* Temporary maintenance mode for campaign launch approval. */
+.maintenance-title {
+  margin: 0 0 10px;
+  font-weight: 900;
+  font-size: clamp(1.25rem, 2.3vw, 1.8rem);
+  color: var(--primary);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Temporary maintenance mode for campaign launch approval. */
+.maintenance-card h1 {
+  margin: 0 0 14px;
+  font-size: clamp(1.75rem, 3.2vw, 2.45rem);
+  color: #0b2e74;
+}
+
+/* Temporary maintenance mode for campaign launch approval. */
+.maintenance-copy {
+  margin: 0 0 12px;
+  color: #1e293b;
+  font-size: 1.04rem;
+  line-height: 1.72;
+}
+
+/* Temporary maintenance mode for campaign launch approval. */
+.maintenance-helper {
+  margin-top: 16px;
+  color: #334155;
+}
+
+/* Temporary maintenance mode for campaign launch approval. */
+.maintenance-helper a {
+  color: #0b2e74;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
 .site-footer { border-top: 1px solid var(--border); padding: 20px 0 40px; }
 .footer-content { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); flex-wrap: wrap; }
 .auth-shell { min-height: calc(100vh - 85px); display: grid; place-items: center; padding: 32px 0; }
