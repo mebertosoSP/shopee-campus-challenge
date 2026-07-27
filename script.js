@@ -28,7 +28,7 @@ const SHEET_CODES_CACHE_TTL_MS = 2 * 60 * 1000;
 // Temporary maintenance mode for campaign launch approval.
 const MAINTENANCE_MODE = true;
 // Temporary maintenance mode for campaign launch approval.
-const MAINTENANCE_BLOCKED_PAGES = new Set(['acc', 'dashboard', 'leaderboard', 'login', 'register']);
+const MAINTENANCE_BLOCKED_PAGES = new Set(['acc', 'dashboard', 'leaderboard', 'register']);
 let saveStateTimer = null;
 const DECLINE_REASONS = [
   'Proof of ShopeePay is insufficient. Please upload another screenshot of your verified ShopeePay.',
